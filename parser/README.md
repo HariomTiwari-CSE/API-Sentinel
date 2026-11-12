@@ -1,117 +1,96 @@
-# HTTP Parser Module (`parser/`) — API-Sentinel
+# 🧩 HTTP Parser Module (`parser/`)
 
-**Owner:** Prince Kumar (Contributor 2)  
-**Module:** `parser/`  
-**Downstream Consumers:** `discovery/` (Agam), `detector/` (Hariom)  
-**Upstream Provider:** `sensor/` (Pranav's eBPF sensor + Rust user-space agent)
+> **Assigned to:** Prince Kumar (Contributor 2)  
+> **Upstream input:** Raw socket chunks from Pranav's Rust agent (`sensor/`)  
+> **Downstream output:** Clean HTTP records for Agam (`discovery/`) and Hariom (`detector/`)
 
 ---
 
-## 1. Module Overview & Architectural Placement
+## 💡 What Does This Module Do?
 
-In the **API-Sentinel** architecture, the HTTP Parser is the bridge between raw kernel traffic capture and user-space security detection engines:
+When network traffic is captured in the Linux kernel by eBPF, it comes out as messy, raw bytes. Packets can be split in half, arrive out of order, or have partial headers.
 
-```
-[ Linux Kernel ]
-       │ eBPF Syscall Probes (send, recv, read, write)
-       ▼
-[ Ring Buffer ]
-       │ Raw socket bytes & 4-tuple events
-       ▼
-[ Rust Agent (sensor/) ]
-       │ RawFragment stream (connection_id, direction, payload, ts)
-       ▼
-[ HTTP Parser (parser/) ] ◄── (This Module)
-  - Reassembles fragmented TCP streams per connection
-  - Reconstructs complete HTTP/1.x requests and responses
-  - Matches requests to responses (FIFO / pipelining)
-  - Extracts caller identity (JWT claims, API keys) & role
-  - Computes request-response latency (latency_ms)
-       │
-       ├───────────────────────────────┐
-       ▼                               ▼
-[ discovery/ (Agam) ]         [ detector/ (Hariom) ]
-- Shadow/Zombie API engine    - BOLA / BFLA engine
-- Path normalization          - User ownership map
-- Schema inference            - Kernel block verdicts
+The **HTTP Parser** module takes care of all that heavy lifting:
+
+1. **Reassembles fragments:** Glues broken TCP chunks back into complete HTTP/1.x requests and responses.
+2. **Identifies the caller:** Decodes JWT Bearer tokens or API keys without third-party bloat to find out *who* made the call (e.g. `user_55`) and their role (`admin` or `user`).
+3. **Pairs requests & responses:** Matches each outgoing request with its incoming response so we know the HTTP status code (200, 403, 404, etc.) and calculate how many milliseconds it took (`latency_ms`).
+4. **Hands off clean data:** Produces a standardized `Record` object that the BOLA detector and Shadow API engine can evaluate immediately.
+
+---
+
+## 📦 How the Code is Organized
+
+```text
+parser/
+├── __init__.py         # Package exports (models, base parser, auth helper)
+├── models.py           # Record, RawFragment, ConnectionKey, ParsedHTTPRequest/Response
+├── base.py             # BaseHTTPParser abstract interface (so we can swap engines or mock in tests)
+├── reassembler.py      # ConnectionState buffer management & latency timing
+├── auth.py             # Safe, zero-dependency JWT and API-key extractor
+└── README.md           # This guide
 ```
 
 ---
 
-## 2. Interface Contracts
+## 📜 The Data Contracts
 
-### 2.1 Upstream Input (`RawFragment`)
-
-Received from the Rust user-space agent:
-
+### 1. What comes in (`RawFragment` from Rust agent):
 ```python
 RawFragment(
     connection_id="10.0.0.7:54321->10.0.0.1:8000",
     ts=1731312000.1,
-    direction=TrafficDirection.INGRESS,  # INGRESS (request) or EGRESS (response)
+    direction=TrafficDirection.INGRESS,  # INGRESS for request, EGRESS for response
     payload=b"GET /api/orders/1002 HTTP/1.1\r\nHost: api.crapi.local\r\n..."
 )
 ```
 
-### 2.2 Downstream Output (`Record`)
-
-Standardized dataclass published onto the event bus for `discovery/` and `detector/`:
-
+### 2. What goes out (`Record` to Detector & Discovery):
 ```python
 @dataclass(frozen=True)
 class Record:
     ts: float                # Request timestamp (epoch seconds)
-    user: str                # Identified user ID / subject (e.g., "user_55" or "anonymous")
-    method: str              # HTTP method (e.g., "GET", "POST", "PUT", "DELETE")
-    path: str                # Request URI / path (e.g., "/api/orders/1002")
-    status: int              # Response HTTP status code (e.g., 200, 403, 404)
-    req_body: Any = None     # Parsed request body (dict/list for JSON, str, or None)
-    resp_body: Any = None    # Parsed response body (dict/list for JSON, str, or None)
-    latency_ms: float = 0.0  # Duration between request and response in milliseconds
-    src_ip: str = ""         # Client IP address (for rate limiting, bot & blocklist rules)
-    role: str = "user"       # Caller role from JWT claims (for BFLA detection)
+    user: str                # Identified user ID (e.g. "user_55" or "anonymous")
+    method: str              # HTTP method ("GET", "POST", "PUT", "DELETE")
+    path: str                # URL path (e.g. "/api/orders/1002")
+    status: int              # Response status code (e.g. 200, 403, 404)
+    req_body: Any = None     # Request body (parsed JSON dict, string, or None)
+    resp_body: Any = None    # Response body (parsed JSON dict, string, or None)
+    latency_ms: float = 0.0  # Round-trip duration in milliseconds
+    src_ip: str = ""         # Client IP address (for rate limiting & blocklists)
+    role: str = "user"       # Role from JWT claims (for BFLA privilege checks)
 ```
 
-JSON Representation:
+JSON representation:
 ```json
 {
   "ts": 1731312000.1,
   "user": "user_55",
+  "role": "user",
   "method": "GET",
   "path": "/api/orders/1002",
   "status": 200,
   "req_body": null,
-  "resp_body": {"id": 1002},
+  "resp_body": {"id": 1002, "item": "Keyboard"},
   "latency_ms": 12.4,
-  "src_ip": "10.0.0.7",
-  "role": "user"
+  "src_ip": "10.0.0.7"
 }
 ```
 
 ---
 
-## 3. Module Structure
+## 🧪 Testing
 
-```
-parser/
-├── __init__.py         # Package exports and version metadata
-├── models.py           # Record, RawFragment, ConnectionKey, ParsedHTTPRequest/Response
-├── base.py             # BaseHTTPParser abstract interface
-├── reassembler.py      # ConnectionState buffer management and latency calculation
-├── auth.py             # JWT claims extraction and API key identification
-└── README.md           # Module architecture and documentation
+We keep things lightweight with zero required third-party packages.
+
+Run all tests:
+```bash
+python -m pytest tests/ -v
 ```
 
----
-
-## 4. Week 1 Implementation Roadmap
-
-| Day | Goal & Tasks | Status |
-|:---:|:---|:---:|
-| **Day 1** | **Foundation & Contracts:** Architecture analysis, module skeleton, data models, base parser interface, auth helper, foundation unit tests. | ✅ Completed |
-| **Day 2** | **HTTP Request Parsing:** Implement HTTP/1.x request line parsing, headers extraction, Content-Length & chunked body decoding. | ⏳ Planned |
-| **Day 3** | **HTTP Response Parsing:** Implement response status line, response headers, body decoding, and error response handling. | ⏳ Planned |
-| **Day 4** | **Stream Reassembly & Matching:** Implement FIFO transaction pairing, connection buffer flush, and accurate `latency_ms` calculation. | ⏳ Planned |
-| **Day 5** | **Robustness & Edge Cases:** Malformed HTTP handling, fragmented packets, boundary split tests, large payload handling. | ⏳ Planned |
-| **Day 6** | **Integration Verification:** Feed sample crAPI traffic dumps, verify `Record` emission against Hariom's detector and Agam's discovery engine. | ⏳ Planned |
-| **Day 7** | **Mid-Review Preparation:** Code cleanup, performance verification, PR review, and documentation finalization. | ⏳ Planned |
+All 17 tests verify:
+* Record creation, default values, and `.ok` (2xx check) property
+* Fast JSON and dictionary serialization
+* Connection 4-tuple normalization
+* JWT claim decoding without PyJWT
+* Connection buffer state and latency calculation
