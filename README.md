@@ -79,7 +79,7 @@ Traffic seamlessly flows from the Linux kernel to modular analytical engines, cl
 
 ## 👥 Engineering Team & Ownership
 
-API-Sentinel is built by a 5-member engineering team for the **Axlero Solutions** Cybersecurity Internship Program:
+API-Sentinel is built by a collaborative 5-member engineering team:
 
 | Contributor | Module | Domain & Responsibilities | Tech Stack |
 |:---|:---|:---|:---|
@@ -204,7 +204,6 @@ Week 4: Visualization & Final Defense
 
 <div align="center">
 
-**API-Sentinel Project** • Developed under **Axlero Solutions Cybersecurity Program**  
-*Built with precision for modern API security.*
+**API-Sentinel** • *Built with precision for modern API security.*
 
 </div>
