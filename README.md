@@ -1,161 +1,210 @@
-# 🛡️ API-Sentinel
+<div align="center">
 
-> **Real-time API Security Engine**  
-> We monitor live API traffic without slowing down apps, spot hidden APIs, and catch sneaky authorization attacks like BOLA before damage is done.
+# ⚡ API-Sentinel
 
----
+### **Runtime BOLA & Shadow API Detection Engine**
+*Zero-overhead kernel traffic capture via eBPF • Automated TCP stream reassembly • Behavioral authorization defense • Real-time threat telemetry*
 
-## 🧐 What is this project?
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![eBPF](https://img.shields.io/badge/Kernel-eBPF%20%2F%20Rust-orange?style=for-the-badge&logo=rust&logoColor=white)](https://ebpf.io/)
+[![OWASP](https://img.shields.io/badge/OWASP-API%20Security%20Top%2010-red?style=for-the-badge&logo=owasp&logoColor=white)](https://owasp.org/www-project-api-security/)
+[![Tests](https://img.shields.io/badge/Tests-17%20Passed%20(100%25)-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
+[![Architecture](https://img.shields.io/badge/Design-Zero--Trust%20Passive-purple?style=for-the-badge)](docs/)
 
-Almost every modern app runs on APIs. When you order food, check your bank balance, or send a message, your phone talks to a server through APIs.
-
-Most security tools (like Web Application Firewalls) look for obvious attacks, like someone typing weird SQL code into a search box. But modern API attacks don't look like that:
-
-1. **BOLA (Broken Object Level Authorization):**  
-   Imagine you log in and view your receipt at `/api/orders/1001`. Then you change the URL number to `/api/orders/1002`. If the app gives you someone else's receipt, that's BOLA! Standard firewalls can't spot this because the request looks 100% normal.
-2. **Shadow APIs (Hidden Endpoints):**  
-   Developers often build quick test routes or forget to delete old versions (like `/v1/debug_users`). These don't appear in the official documentation, so security teams don't even know they exist.
-
-**API-Sentinel** is our solution. We watch network traffic quietly right inside the Linux kernel using **eBPF** (so developers don't have to change a single line of code). We rebuild that traffic, figure out who is calling what, check if they actually own the data, and block attackers on the fly.
+</div>
 
 ---
 
-## ⚙️ How Traffic Flows Through the System
+## ⚡ The Mission: Why We Built API-Sentinel
 
-Here is the simple, step-by-step path traffic takes:
+Modern software architectures run on microservices and distributed APIs. While traditional **Web Application Firewalls (WAFs)** and API Gateways defend well against signature-based threats like SQL Injection, they are fundamentally blind to business-logic attacks:
+
+* 🚨 **Broken Object Level Authorization (BOLA / IDOR):** Attackers don't inject malicious code; they send valid HTTP requests while manipulating resource identifiers (e.g., requesting `/api/orders/1002` instead of `/api/orders/1001`). Firewalls see valid JSON and approve the request.
+* 👻 **Shadow & Zombie APIs:** Fast deployment cycles leave undocumented endpoints, forgotten debug paths, and deprecated API versions live in production. Security teams cannot protect endpoints they don't know exist.
+
+**API-Sentinel** solves these vulnerabilities through **passive, kernel-level observability**. By instrumenting Linux socket syscalls with **eBPF**, API-Sentinel inspects live API traffic at wire speed without introducing latency, requiring sidecars, or altering a single line of application source code.
+
+---
+
+## 🏛️ System Architecture
+
+Traffic seamlessly flows from the Linux kernel to modular analytical engines, closing the feedback loop with automated kernel-level threat mitigation:
 
 ```text
-       [ API Users & Microservices ]
-                     │
-  ─── KERNEL SPACE ──┼────────────────────────────────────────────────
-                     ▼
-            eBPF Kernel Probes      <-- Listens to socket calls (send/recv)
-                     │
-                Ring Buffer
-  ─── USER SPACE ────┼────────────────────────────────────────────────
-                     ▼
-             Rust Agent (sensor/)   <-- Pulls raw bytes out of the kernel
-                     │
-                     ▼ (Raw byte fragments)
-          HTTP Parser (parser/)     <-- [Prince's Module]
-          • Glues fragments back into HTTP requests & responses
-          • Reads JWT tokens or API keys to identify the user
-          • Measures how long the call took (latency)
-                     │
-                     ▼ (Clean, structured records)
-          ┌──────────┴──────────┐
-          ▼                     ▼
-    Shadow API Engine     BOLA / BFLA Engine
-    (Agam - discovery/)   (Hariom - detector/)
-    Finds undocumented    Spots users stealing other
-    endpoints and bots.   people's data or admin rights.
-          │                     │
-          └──────────┬──────────┘
-                     ▼
-              PII Masker (Meet - masking/)
-              Hides sensitive info (passwords, emails)
-                     │
-          ┌──────────┴──────────┐
-          ▼                     ▼
-    React Dashboard       Kernel Blocklist
-    (Meet - dashboard/)   (Pranav - sensor/)
-    Shows live alerts     Drops attacker packets
-    and endpoint maps.    instantly at network level.
+       ┌─────────────────────────────────────────────────────────────┐
+       │                 API Clients & Microservices                 │
+       └──────────────────────────────┬──────────────────────────────┘
+                                      │ Live Traffic
+  ════════════════════════════════════╪═════════════════════════════════════  KERNEL SPACE
+                                      ▼
+                      eBPF Syscall Probes (sys_enter / sys_exit)
+                         [send, recv, read, write]
+                                      │
+                                      ▼
+                             eBPF Ring Buffer
+  ════════════════════════════════════╪═════════════════════════════════════  USER SPACE
+                                      ▼
+                         Rust Ingestion Agent (sensor/)
+                                      │
+                                      │ Raw Fragments & Socket 4-Tuples
+                                      ▼
+                       HTTP Stream Parser (parser/) ◄── [Prince]
+                       • Stateful TCP Stream Reassembly
+                       • Request-Response Transaction Pairing
+                       • Sub-ms Latency Timing (latency_ms)
+                       • Zero-Dependency JWT & Key Decoding
+                                      │
+                                      │ Normalized Records (Record)
+                       ┌──────────────┴──────────────┐
+                       ▼                             ▼
+         Shadow API Engine (discovery/)     BOLA / BFLA Engine (detector/)
+         • Automated Path Normalization     • Object Ownership Graphs
+         • Schema Inference ({id})          • Sequential ID Enumeration
+         • OpenAPI Spec Drift Detection     • Privilege Violation Checks
+                       │                             │
+                       └──────────────┬──────────────┘
+                                      ▼
+                          PII Masking Layer (masking/)
+                          • Redaction of Passwords, Tokens & PII
+                                      │
+                       ┌──────────────┴──────────────┐
+                       ▼                             ▼
+             Live Threat Dashboard             Kernel Enforcement
+                 (dashboard/)                   (XDP / TC Map)
+          • Real-time Attack Feeds         • Microsecond packet drops
+          • OWASP Top 10 Mapping           • Zero-impact on healthy traffic
 ```
 
 ---
 
-## 👥 Who is Building What?
+## 👥 Engineering Team & Ownership
 
-We are a 5-person team working on this project as part of our Axlero Solutions cybersecurity internship:
+API-Sentinel is built by a 5-member engineering team for the **Axlero Solutions** Cybersecurity Internship Program:
 
-| Teammate | Folder | What They Own | Tech Stack |
+| Contributor | Module | Domain & Responsibilities | Tech Stack |
 |:---|:---|:---|:---|
-| **Pranav** | `sensor/` | **Kernel Sniffer:** Writes eBPF programs in C/Rust to grab traffic without adding delay, and drops blocked IPs with XDP. | Rust, eBPF, Aya |
-| **Prince** *(Me)* | `parser/` | **HTTP Parser:** Takes messy raw byte chunks, reassembles full HTTP requests/responses, identifies the user from JWTs, and measures latency. | Python |
-| **Agam** | `discovery/`, `ratelimit/` | **Shadow API & Rate Limiting:** Discovers unlisted endpoints, checks them against OpenAPI specs, and stops spammers/bots. | Python |
-| **Hariom** | `detector/` | **BOLA & BFLA Detection:** Tracks which user owns what ID, flags when someone touches someone else's data, and triggers blocks. | Python |
-| **Meet** | `masking/`, `dashboard/`, `testbed/` | **UI, Privacy & Testbed:** Masks sensitive user data, builds the React frontend, and runs test attacks against crAPI. | React, Vite, Docker |
+| **Pranav** | `sensor/` | **Kernel Instrumentation:** eBPF syscall probes, lock-free ring buffers, Rust user-space agent, and XDP/TC active packet-drop enforcement. | Rust, eBPF, Aya, C |
+| **Prince** *(Me)* | `parser/` | **HTTP Stream Engine:** Per-connection TCP reassembly, request-response transaction correlation, JWT/API-key identity resolution, and latency analytics. | Python 3.10+ |
+| **Agam** | `discovery/`, `ratelimit/` | **API Inventory & Abuse Control:** Path parameter abstraction (`/orders/1002` → `/orders/{id}`), OpenAPI drift engine, and token-bucket rate limiting. | Python |
+| **Hariom** | `detector/` | **Behavioral Authorization:** Dynamic object ownership mapping, BOLA enumeration detection, BFLA privilege checks, and block verdict generation. | Python |
+| **Meet** | `masking/`, `dashboard/`, `testbed/` | **Telemetry & Testbed:** PII data masking engine, React/Vite security dashboard, and vulnerable application testbed (crAPI / VAmPI). | React, Vite, Tailwind CSS, Docker |
 
 ---
 
-## 🧩 Deep Dive: My Module (`parser/`)
+## 🔬 Core Module Spotlight: `parser/` (My Ownership)
 
-My job is the bridge between the kernel and the security brains.
+The **HTTP Parser** module acts as the critical translation pipeline between raw, fragmented kernel socket events and downstream analytical engines.
 
-When the kernel grabs network packets, they arrive in raw, broken chunks. My parser:
-1. **Reassembles Streams:** Buffers TCP data so that partial packets get stitched together into complete HTTP requests and responses.
-2. **Matches Pairs:** Connects each request to its matching response so we know the status code (like 200 OK or 403 Forbidden) and the exact round-trip time (`latency_ms`).
-3. **Pulls Identity:** Inspects `Authorization: Bearer <JWT>` tokens or API keys to see *who* is making the request (e.g. `user_55`) and what *role* they have (`admin` vs `user`).
-4. **Sends Clean Records:** Emits a simple Python object (`Record`) that Agam and Hariom can analyze immediately.
+### Key Capabilities:
+* **Stateful Stream Reassembly:** Buffers incoming network slices across connection tuples (`ConnectionKey`) to assemble complete HTTP/1.x requests and responses regardless of TCP fragmentation.
+* **Deterministic Transaction Pairing:** Correlates requests and responses in strict FIFO order, computing high-precision round-trip latency (`latency_ms`).
+* **Zero-Overhead Identity Extraction:** Decodes user subjects, emails, and role claims directly from `Authorization: Bearer <JWT>`, `X-API-Key`, and custom headers without external dependencies.
+* **Universal Contract Compliance:** Emits immutable, standardized `Record` instances consumable simultaneously by discovery, rate-limiting, and detection modules.
 
-### What the output record looks like:
+### Standard Output Schema (`Record`):
 ```json
 {
-  "ts": 1731312000.1,
+  "ts": 1731312000.104,
   "user": "user_55",
   "role": "user",
   "method": "GET",
   "path": "/api/orders/1002",
   "status": 200,
   "req_body": null,
-  "resp_body": {"id": 1002, "item": "Keyboard"},
-  "latency_ms": 12.4,
+  "resp_body": {
+    "order_id": 1002,
+    "product": "Mechanical Keyboard",
+    "amount": 129.99
+  },
+  "latency_ms": 14.25,
   "src_ip": "10.0.0.7"
 }
 ```
 
 ---
 
-## 📅 4-Week Schedule
+## 🗂️ Module File Hierarchy
 
-### **Week 1 — Getting the Basics Working**
-- [x] **Day 1:** Set up repo, clean modular design, defined data contracts (`Record`, `RawFragment`), built identity extractor, wrote 17 unit tests.
-- [ ] **Day 2:** Parse HTTP request lines and headers (handle JSON bodies and content lengths).
-- [ ] **Day 3:** Parse HTTP responses and status codes.
-- [ ] **Day 4:** Match requests and responses together per connection and calculate latency.
-- [ ] **Day 5:** Handle tricky edge cases (broken packets, weird headers, huge bodies).
-- [ ] **Day 6:** Test with realistic fake traffic dumps.
-- [ ] **Day 7:** Clean up code, fix any bugs, and get ready for Week 2.
-
-### **Week 2 — Finding Attacks & Mid Review**
-- Map all discovered API endpoints automatically.
-- Flag shadow APIs not found in the OpenAPI docs.
-- Detect BOLA attacks when IDs are swapped.
-- **Mid Review:** Demo catching a real simulated BOLA attack!
-
-### **Week 3 — Active Defense**
-- Tell the eBPF kernel layer to block attacker IPs instantly.
-- Add rate limits and bot pattern blockers.
-
-### **Week 4 — Dashboard & Final Polish**
-- Mask passwords and personal emails before they hit the screen.
-- Polish the React dashboard.
-- Final review presentation and project report.
+```text
+api-sentinel/
+├── parser/                     # [PRINCE] HTTP Parsing Engine
+│   ├── __init__.py             # Public API & version metadata
+│   ├── models.py               # Record, RawFragment, ConnectionKey, ParsedHTTP models
+│   ├── base.py                 # BaseHTTPParser abstract interface
+│   ├── reassembler.py          # Stateful connection tracking & latency timers
+│   ├── auth.py                 # Zero-dependency JWT claim & API-key parser
+│   └── README.md               # Detailed parser architectural documentation
+├── tests/                      # Test suites
+│   ├── __init__.py             # Test package initialization
+│   └── test_parser_foundation.py # 17 comprehensive unit & contract tests
+├── .gitignore                  # Clean repository isolation
+└── README.md                   # Project overview & documentation
+```
 
 ---
 
-## 🧪 How to Run the Tests
+## 🚀 Developer Quickstart
 
-The parser module has **zero third-party dependencies**—it runs on pure, fast standard Python!
+The parser module is engineered with **zero third-party dependencies**, running entirely on Python's optimized standard library.
 
-Run the tests with `pytest`:
+### 1. Clone & Switch to Working Branch
+```bash
+git clone https://github.com/HariomTiwari-CSE/API-Sentinel.git
+cd API-Sentinel
+git checkout Prince
+```
+
+### 2. Run Test Suite
+Execute the comprehensive test suite with `pytest`:
 ```bash
 python -m pytest tests/ -v
 ```
 
-Or run with Python's built-in `unittest`:
+Or run directly with standard library `unittest`:
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Right now, all **17 tests pass in 0.04 seconds**.
+```text
+================================= Test Summary =================================
+tests/test_parser_foundation.py .................                        [100%]
+============================== 17 passed in 0.04s ==============================
+```
 
 ---
 
-## 📖 Simple Explanations of Key Terms
+## 📅 4-Week Milestone Roadmap
 
-* **eBPF:** A cool Linux technology that lets you run small, safe programs inside the operating system kernel. It lets us watch network traffic without installing heavy plugins inside the app.
-* **BOLA:** Broken Object Level Authorization. When an API lets User A view User B's private account just by guessing their ID number.
-* **BFLA:** Broken Function Level Authorization. When a normal user calls an admin endpoint like `/api/admin/delete_user` and the app forgets to check their role.
-* **Shadow API:** An active endpoint running in production that nobody documented in Swagger or OpenAPI.
+```text
+Week 1: Ingestion & Foundations
+├── [x] Day 1: Architecture analysis, contract alignment, Record & models, foundation test suite.
+├── [ ] Day 2: HTTP/1.x request-line parsing, header extraction, and JSON body decoding.
+├── [ ] Day 3: HTTP response parsing, status-line resolution, and error response handling.
+├── [ ] Day 4: Stream reassembly engine, FIFO transaction pairing, and latency calculations.
+├── [ ] Day 5: Resiliency testing (TCP segmentation, chunked encoding, malformed inputs).
+├── [ ] Day 6: Cross-module pipeline verification with crAPI synthetic traffic fixtures.
+└── [ ] Day 7: Buffer day, code audit, and Mid-Review PR staging.
+
+Week 2: Detection & Mid Review
+├── Shadow API discovery & OpenAPI drift detection.
+├── Dynamic object ownership mapping & BOLA attack detection.
+└── Mid-Review Milestone: Live attack demonstration against target environment.
+
+Week 3: Active Defense & Rate Limiting
+├── Kernel blocklist synchronization (XDP / TC packet drop integration).
+└── Token-bucket rate limiting and automated bot pattern detection.
+
+Week 4: Visualization & Final Defense
+├── PII data masking engine integration.
+├── React security dashboard mapped to OWASP API Security Top 10.
+└── Final presentation, benchmarking, and project documentation.
+```
+
+---
+
+<div align="center">
+
+**API-Sentinel Project** • Developed under **Axlero Solutions Cybersecurity Program**  
+*Built with precision for modern API security.*
+
+</div>
