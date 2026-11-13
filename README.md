@@ -5,7 +5,7 @@
 ### **Runtime BOLA & Shadow API Detection Engine**
 *Zero-overhead kernel traffic capture via eBPF • Automated TCP stream reassembly • Behavioral authorization defense • Real-time threat telemetry*
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![eBPF](https://img.shields.io/badge/Kernel-eBPF%20%2F%20Rust-orange?style=for-the-badge&logo=rust&logoColor=white)](https://ebpf.io/)
 [![OWASP](https://img.shields.io/badge/OWASP-API%20Security%20Top%2010-red?style=for-the-badge&logo=owasp&logoColor=white)](https://owasp.org/www-project-api-security/)
 [![Tests](https://img.shields.io/badge/Tests-17%20Passed%20(100%25)-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
@@ -84,7 +84,7 @@ API-Sentinel is built by a collaborative 5-member engineering team:
 | Contributor | Module | Domain & Responsibilities | Tech Stack |
 |:---|:---|:---|:---|
 | **Pranav** | `sensor/` | **Kernel Instrumentation:** eBPF syscall probes, lock-free ring buffers, Rust user-space agent, and XDP/TC active packet-drop enforcement. | Rust, eBPF, Aya, C |
-| **Prince** *(Me)* | `parser/` | **HTTP Stream Engine:** Per-connection TCP reassembly, request-response transaction correlation, JWT/API-key identity resolution, and latency analytics. | Python 3.10+ |
+| **Prince** *(Me)* | `parser/` | **HTTP Stream Engine:** Per-connection TCP reassembly, request-response transaction correlation, JWT/API-key identity resolution, and latency analytics. | Rust (Rust 2021) |
 | **Agam** | `discovery/`, `ratelimit/` | **API Inventory & Abuse Control:** Path parameter abstraction (`/orders/1002` → `/orders/{id}`), OpenAPI drift engine, and token-bucket rate limiting. | Python |
 | **Hariom** | `detector/` | **Behavioral Authorization:** Dynamic object ownership mapping, BOLA enumeration detection, BFLA privilege checks, and block verdict generation. | Python |
 | **Meet** | `masking/`, `dashboard/`, `testbed/` | **Telemetry & Testbed:** PII data masking engine, React/Vite security dashboard, and vulnerable application testbed (crAPI / VAmPI). | React, Vite, Tailwind CSS, Docker |
@@ -127,16 +127,18 @@ The **HTTP Parser** module acts as the critical translation pipeline between raw
 
 ```text
 api-sentinel/
-├── parser/                     # [PRINCE] HTTP Parsing Engine
-│   ├── __init__.py             # Public API & version metadata
-│   ├── models.py               # Record, RawFragment, ConnectionKey, ParsedHTTP models
-│   ├── base.py                 # BaseHTTPParser abstract interface
-│   ├── reassembler.py          # Stateful connection tracking & latency timers
-│   ├── auth.py                 # Zero-dependency JWT claim & API-key parser
+├── parser/                     # [PRINCE] Rust HTTP Parsing Engine
+│   ├── Cargo.toml              # Rust crate manifest & dependencies
+│   ├── src/
+│   │   ├── lib.rs              # Crate entrypoint & exports
+│   │   ├── models.rs           # Record, RawFragment, ConnectionKey models
+│   │   ├── request.rs          # HTTP/1.x request-line, header, and body parser
+│   │   ├── auth.rs             # Zero-dependency JWT claim & API-key parser
+│   │   ├── base.rs             # HttpParser trait interface
+│   │   └── reassembler.rs      # Stateful connection tracking & latency timers
+│   ├── tests/
+│   │   └── foundation_tests.rs # Cargo test suite
 │   └── README.md               # Detailed parser architectural documentation
-├── tests/                      # Test suites
-│   ├── __init__.py             # Test package initialization
-│   └── test_parser_foundation.py # 17 comprehensive unit & contract tests
 ├── .gitignore                  # Clean repository isolation
 └── README.md                   # Project overview & documentation
 ```
@@ -145,7 +147,7 @@ api-sentinel/
 
 ## 🚀 Developer Quickstart
 
-The parser module is engineered with **zero third-party dependencies**, running entirely on Python's optimized standard library.
+The parser module is engineered in **Rust (2021 Edition)** for blazing-fast, wire-speed packet processing with zero runtime overhead.
 
 ### 1. Clone & Switch to Working Branch
 ```bash
@@ -155,14 +157,9 @@ git checkout Prince
 ```
 
 ### 2. Run Test Suite
-Execute the comprehensive test suite with `pytest`:
+Execute the comprehensive test suite with Cargo:
 ```bash
-python -m pytest tests/ -v
-```
-
-Or run directly with standard library `unittest`:
-```bash
-python -m unittest discover -s tests -v
+cargo test --manifest-path parser/Cargo.toml
 ```
 
 ```text

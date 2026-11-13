@@ -21,3 +21,9 @@ powershell.bat
 *.swo
 .vscode/
 .idea/
+
+# Rust / Cargo
+target/
+**/*.rs.bk
+Cargo.lock
+
