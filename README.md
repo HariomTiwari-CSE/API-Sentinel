@@ -163,9 +163,24 @@ cargo test --manifest-path parser/Cargo.toml
 ```
 
 ```text
-================================= Test Summary =================================
-tests/test_parser_foundation.py .................                        [100%]
-============================== 17 passed in 0.04s ==============================
+running 15 tests
+test test_record_instantiation_defaults ... ok
+test test_record_ok_status_variations ... ok
+test test_record_serialization_roundtrip ... ok
+test test_traffic_direction_normalization ... ok
+test test_connection_key_identifiers ... ok
+test test_raw_fragment_creation ... ok
+test test_auth_extract_from_jwt_bearer ... ok
+test test_auth_extract_from_api_key_headers ... ok
+test test_auth_extract_from_user_id_headers ... ok
+test test_auth_anonymous_fallback ... ok
+test test_connection_state_buffering_and_latency ... ok
+test test_parse_simple_get_request ... ok
+test test_parse_post_request_with_json_body ... ok
+test test_parse_pipelined_requests ... ok
+test test_dummy_parser_trait ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
 ---
