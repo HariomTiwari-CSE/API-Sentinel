@@ -28,3 +28,18 @@ class Record:
     @property
     def ok(self) -> bool:
         return 200 <= self.status < 300
+@dataclass
+class Finding:
+    type: str  # "BOLA" | "BFLA"
+    owasp: str  # "API1" | "API5"
+    user: str
+    src_ip: str
+    endpoint: str  # e.g. "GET /api/orders/{id}"
+    severity: str  # low | medium | high | critical
+    action: str  # "alert" | "block"
+    reason: str = ""
+    ts: float = 0.0
+    evidence: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
