@@ -56,3 +56,4 @@ impl ConnectionState {
         self.pending_requests.clear();
     }
 }
+

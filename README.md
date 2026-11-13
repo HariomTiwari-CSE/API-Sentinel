@@ -8,7 +8,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2021%20Edition-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![eBPF](https://img.shields.io/badge/Kernel-eBPF%20%2F%20Rust-orange?style=for-the-badge&logo=rust&logoColor=white)](https://ebpf.io/)
 [![OWASP](https://img.shields.io/badge/OWASP-API%20Security%20Top%2010-red?style=for-the-badge&logo=owasp&logoColor=white)](https://owasp.org/www-project-api-security/)
-[![Tests](https://img.shields.io/badge/Tests-17%20Passed%20(100%25)-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-38%20Passed%20(100%25)-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![Architecture](https://img.shields.io/badge/Design-Zero--Trust%20Passive-purple?style=for-the-badge)](docs/)
 
 </div>
@@ -175,7 +175,7 @@ tests/test_parser_foundation.py .................                        [100%]
 ```text
 Week 1: Ingestion & Foundations
 ├── [x] Day 1: Architecture analysis, contract alignment, Record & models, foundation test suite.
-├── [ ] Day 2: HTTP/1.x request-line parsing, header extraction, and JSON body decoding.
+├── [x] Day 2: HTTP/1.x request-line parsing, header extraction, and JSON body decoding.
 ├── [ ] Day 3: HTTP response parsing, status-line resolution, and error response handling.
 ├── [ ] Day 4: Stream reassembly engine, FIFO transaction pairing, and latency calculations.
 ├── [ ] Day 5: Resiliency testing (TCP segmentation, chunked encoding, malformed inputs).

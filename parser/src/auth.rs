@@ -150,3 +150,4 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
 
     (DEFAULT_ANONYMOUS_USER.to_string(), DEFAULT_USER_ROLE.to_string())
 }
+

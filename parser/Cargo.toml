@@ -12,3 +12,4 @@ serde_json = "1.0"
 [lib]
 name = "api_sentinel_parser"
 path = "src/lib.rs"
+

@@ -245,3 +245,4 @@ impl Record {
         serde_json::from_str(json_str)
     }
 }
+
