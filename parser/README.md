@@ -3,39 +3,39 @@
 > **Assigned to:** Prince Kumar (Contributor 2)  
 > **Language:** Rust (Rust 2021 edition)  
 > **Crate Name:** `api-sentinel-parser`  
-> **Upstream input:** Raw socket chunks from Pranav's eBPF sensor & Rust ingestion agent (`sensor/`)  
+> **Upstream input:** Raw socket chunks from Pranav's eBPF sensor & Rust agent (`sensor/`)  
 > **Downstream output:** Clean, structured `Record`s for Agam (`discovery/`) and Hariom (`detector/`)
 
 ---
 
 ## 💡 What Does This Module Do?
 
-When network traffic is captured in the Linux kernel by eBPF, it comes out as raw, fragmented byte slices from socket syscalls (`send`, `recv`, `read`, `write`).
+When network traffic is captured in the Linux kernel by eBPF, it comes out as messy, broken byte slices. A single HTTP call might be split across several packets.
 
-The **Rust HTTP Parser** module delivers zero-copy, wire-speed parsing:
+The **Rust HTTP Parser** module turns those messy bytes into clean, structured data:
 
-1. **Reassembles TCP Streams:** Buffers in-flight TCP slices across socket 4-tuples (`ConnectionKey`) to reassemble fragmented HTTP/1.x messages.
-2. **Parses Requests & Bodies:** Extracts request line (`method`, `path`, `http_version`), case-insensitive headers, chunked transfer-encoding, `Content-Length`, and JSON payloads into structured `ParsedHTTPRequest` instances.
-3. **Extracts Identity & Roles:** Safe, zero-dependency JWT Bearer payload decoder and API key extractor to resolve `user` (e.g. `user_55`) and `role` (`admin` / `user`) for BFLA/BOLA detection.
-4. **Pairs Requests & Responses:** Correlates transactions in FIFO order, computing high-precision sub-millisecond round-trip latency (`latency_ms`).
-5. **Emits Standard Records:** Produces normalized `Record` structs serializable directly to JSON for downstream consumption.
+1. **Glues Broken Packets Together:** Buffers and rebuilds fragmented TCP network streams so that partial pieces become full HTTP messages.
+2. **Parses HTTP Requests:** Extracts the method (`GET`, `POST`, etc.), the path, case-insensitive headers, and unpacks JSON request bodies safely.
+3. **Identifies the Caller:** Reads `Authorization: Bearer <JWT>` tokens or API keys to know *who* made the call (e.g. `user_55`) and their *role* (`admin` or `user`) with zero external crypto libraries.
+4. **Times the Response:** Pairs every request with its matching response to calculate exact round-trip time in milliseconds (`latency_ms`).
+5. **Outputs Clean Records:** Emits a standardized `Record` struct that can be serialized directly to JSON for downstream detection engines.
 
 ---
 
-## 📦 Rust Crate Structure
+## 📦 How the Code is Organized
 
 ```text
 parser/
-├── Cargo.toml                  # Rust package manifest & dependencies (serde, serde_json)
+├── Cargo.toml                  # Rust package setup and dependencies (serde, serde_json)
 ├── src/
-│   ├── lib.rs                  # Crate root & public exports
-│   ├── models.rs               # Record, RawFragment, ConnectionKey, ParsedHTTPRequest/Response
-│   ├── request.rs              # Core HTTP/1.x request-line, header, and body parser
-│   ├── auth.rs                 # Zero-dependency JWT base64url decoding & API-key parser
+│   ├── lib.rs                  # Module exports
+│   ├── models.rs               # Data structures (Record, RawFragment, ConnectionKey)
+│   ├── request.rs              # HTTP request-line, header, and body parser
+│   ├── auth.rs                 # Zero-dependency JWT and API-key identity reader
 │   ├── base.rs                 # HttpParser trait interface
-│   └── reassembler.rs          # Stateful connection tracking & latency timers
+│   └── reassembler.rs          # Connection buffer tracking and latency stopwatch
 ├── tests/
-│   └── foundation_tests.rs     # Integration & unit test suite (Cargo tests)
+│   └── foundation_tests.rs     # Integration and unit test suite
 └── README.md                   # This documentation
 ```
 
@@ -43,7 +43,7 @@ parser/
 
 ## 📜 The Data Contracts
 
-### 1. Ingest Contract (`RawFragment`):
+### 1. What Comes In (`RawFragment` from Rust agent):
 ```rust
 pub struct RawFragment {
     pub connection_id: String,
@@ -53,7 +53,7 @@ pub struct RawFragment {
 }
 ```
 
-### 2. Output Contract (`Record`):
+### 2. What Goes Out (`Record` to Detector & Discovery):
 ```rust
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Record {
@@ -90,16 +90,16 @@ JSON Output:
 
 ## 🧪 Testing
 
-Execute tests via Cargo:
+Run all unit tests via Cargo:
 ```bash
 cargo test --manifest-path parser/Cargo.toml
 ```
 
 Tests cover:
-* `Record` instantiation, defaults, `.ok()` 2xx checks, and JSON roundtrip serialization
-* `TrafficDirection` string normalization
-* `ConnectionKey` forward, reverse, and bidirectional identifier invariance
-* JWT payload claim decoding and role extraction
-* Connection state stream buffering and latency calculation
-* HTTP request-line, headers, and JSON body parsing
+* `Record` creation, default values, `.ok()` 2xx checks, and JSON roundtrip serialization
+* `TrafficDirection` string parsing and normalization
+* `ConnectionKey` forward, reverse, and bidirectional ID invariance
+* JWT claim decoding and role extraction
+* Connection buffer state and latency calculation
+* HTTP request-line, headers, chunked encoding, and JSON body parsing
 * Pipelined request parsing

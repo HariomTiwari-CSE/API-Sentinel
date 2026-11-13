@@ -2,33 +2,37 @@
 
 # ⚡ API-Sentinel
 
-### **Runtime BOLA & Shadow API Detection Engine**
-*Zero-overhead kernel traffic capture via eBPF • Automated TCP stream reassembly • Behavioral authorization defense • Real-time threat telemetry*
+### **Real-Time API Threat & Shadow API Detection Engine**
+*Watching live API traffic in the Linux kernel • Rebuilding network packets into clean HTTP requests • Catching BOLA attacks before damage is done*
 
 [![Rust](https://img.shields.io/badge/Rust-2021%20Edition-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![eBPF](https://img.shields.io/badge/Kernel-eBPF%20%2F%20Rust-orange?style=for-the-badge&logo=rust&logoColor=white)](https://ebpf.io/)
 [![OWASP](https://img.shields.io/badge/OWASP-API%20Security%20Top%2010-red?style=for-the-badge&logo=owasp&logoColor=white)](https://owasp.org/www-project-api-security/)
-[![Tests](https://img.shields.io/badge/Tests-38%20Passed%20(100%25)-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
-[![Architecture](https://img.shields.io/badge/Design-Zero--Trust%20Passive-purple?style=for-the-badge)](docs/)
+[![Tests](https://img.shields.io/badge/Tests-All%20Passing-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](parser/tests/)
+[![Architecture](https://img.shields.io/badge/Design-Zero--Overhead%20Passive-purple?style=for-the-badge)](docs/)
 
 </div>
 
 ---
 
-## ⚡ The Mission: Why We Built API-Sentinel
+## 💡 What is API-Sentinel and Why Did We Build It?
 
-Modern software architectures run on microservices and distributed APIs. While traditional **Web Application Firewalls (WAFs)** and API Gateways defend well against signature-based threats like SQL Injection, they are fundamentally blind to business-logic attacks:
+Almost every app on your phone or laptop talks to backend servers using **APIs**.
 
-* 🚨 **Broken Object Level Authorization (BOLA / IDOR):** Attackers don't inject malicious code; they send valid HTTP requests while manipulating resource identifiers (e.g., requesting `/api/orders/1002` instead of `/api/orders/1001`). Firewalls see valid JSON and approve the request.
-* 👻 **Shadow & Zombie APIs:** Fast deployment cycles leave undocumented endpoints, forgotten debug paths, and deprecated API versions live in production. Security teams cannot protect endpoints they don't know exist.
+Traditional security tools (like Web Application Firewalls) look for obvious bad code, like someone typing SQL commands into a search box. But the most dangerous modern API attacks don't look like code bugs at all:
 
-**API-Sentinel** solves these vulnerabilities through **passive, kernel-level observability**. By instrumenting Linux socket syscalls with **eBPF**, API-Sentinel inspects live API traffic at wire speed without introducing latency, requiring sidecars, or altering a single line of application source code.
+1. **BOLA (Broken Object Level Authorization):**  
+   Suppose you log in and see your receipt at `/api/orders/1001`. If you change the URL number to `/api/orders/1002` and the app shows you someone else's private order, that is a BOLA attack! Firewalls can't spot this because the request looks like a completely normal, valid HTTP call.
+2. **Shadow APIs (Forgotten & Hidden Endpoints):**  
+   Developers often create quick test routes or leave old versions running (like `/v1/debug_users`). Because these endpoints are not in the official documentation, security teams don't even know they exist to protect them.
+
+**API-Sentinel** fixes this without slowing down the app or forcing developers to change a single line of code. We watch network calls directly inside the Linux kernel using **eBPF**, stitch the traffic back together, figure out who is calling what, and stop attackers on the fly.
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ How Traffic Moves Through the System
 
-Traffic seamlessly flows from the Linux kernel to modular analytical engines, closing the feedback loop with automated kernel-level threat mitigation:
+Here is the simple, step-by-step path traffic takes through our project:
 
 ```text
        ┌─────────────────────────────────────────────────────────────┐
@@ -37,71 +41,75 @@ Traffic seamlessly flows from the Linux kernel to modular analytical engines, cl
                                       │ Live Traffic
   ════════════════════════════════════╪═════════════════════════════════════  KERNEL SPACE
                                       ▼
-                      eBPF Syscall Probes (sys_enter / sys_exit)
-                         [send, recv, read, write]
+                      eBPF Kernel Probes (send / recv)
+                      • Listens to socket traffic quietly
                                       │
                                       ▼
                              eBPF Ring Buffer
   ════════════════════════════════════╪═════════════════════════════════════  USER SPACE
                                       ▼
                          Rust Ingestion Agent (sensor/)
+                         • Pulls raw packet bytes out of the kernel
                                       │
-                                      │ Raw Fragments & Socket 4-Tuples
-                                      ▼
-                       HTTP Stream Parser (parser/) ◄── [Prince]
-                       • Stateful TCP Stream Reassembly
-                       • Request-Response Transaction Pairing
-                       • Sub-ms Latency Timing (latency_ms)
-                       • Zero-Dependency JWT & Key Decoding
+                                      ▼ (Raw Byte Chunks)
+                       HTTP Stream Parser (parser/) ◄── [Prince's Module]
+                       • Glues broken TCP chunks back together
+                       • Reads the HTTP method, path, and headers
+                       • Unpacks JSON request bodies safely
+                       • Extracts caller ID & role from JWT tokens
+                       • Measures response time in milliseconds
                                       │
-                                      │ Normalized Records (Record)
+                                      ▼ (Clean, Structured Records)
                        ┌──────────────┴──────────────┐
                        ▼                             ▼
          Shadow API Engine (discovery/)     BOLA / BFLA Engine (detector/)
-         • Automated Path Normalization     • Object Ownership Graphs
-         • Schema Inference ({id})          • Sequential ID Enumeration
-         • OpenAPI Spec Drift Detection     • Privilege Violation Checks
+         (Agam)                             (Hariom)
+         • Finds hidden/undocumented routes • Checks if a user really owns that ID
+         • Compares against OpenAPI specs   • Flags suspicious ID guessing
+         • Blocks high-speed bots           • Sends block orders back to kernel
                        │                             │
                        └──────────────┬──────────────┘
                                       ▼
                           PII Masking Layer (masking/)
-                          • Redaction of Passwords, Tokens & PII
+                          (Meet)
+                          • Hides passwords, tokens, and personal info
                                       │
                        ┌──────────────┴──────────────┐
                        ▼                             ▼
-             Live Threat Dashboard             Kernel Enforcement
-                 (dashboard/)                   (XDP / TC Map)
-          • Real-time Attack Feeds         • Microsecond packet drops
-          • OWASP Top 10 Mapping           • Zero-impact on healthy traffic
+             Live Threat Dashboard             Kernel Blocklist
+             (Meet - dashboard/)               (Pranav - sensor/)
+             • Clean React dashboard           • Drops attacker packets instantly
+             • Real-time alerts & maps           right at the network card (XDP)
 ```
 
 ---
 
-## 👥 Engineering Team & Ownership
+## 👥 Who is Building What?
 
-API-Sentinel is built by a collaborative 5-member engineering team:
+We are a 5-person engineering team:
 
-| Contributor | Module | Domain & Responsibilities | Tech Stack |
+| Teammate | Folder | What They Build | Tech Stack |
 |:---|:---|:---|:---|
-| **Pranav** | `sensor/` | **Kernel Instrumentation:** eBPF syscall probes, lock-free ring buffers, Rust user-space agent, and XDP/TC active packet-drop enforcement. | Rust, eBPF, Aya, C |
-| **Prince** *(Me)* | `parser/` | **HTTP Stream Engine:** Per-connection TCP reassembly, request-response transaction correlation, JWT/API-key identity resolution, and latency analytics. | Rust (Rust 2021) |
-| **Agam** | `discovery/`, `ratelimit/` | **API Inventory & Abuse Control:** Path parameter abstraction (`/orders/1002` → `/orders/{id}`), OpenAPI drift engine, and token-bucket rate limiting. | Python |
-| **Hariom** | `detector/` | **Behavioral Authorization:** Dynamic object ownership mapping, BOLA enumeration detection, BFLA privilege checks, and block verdict generation. | Python |
-| **Meet** | `masking/`, `dashboard/`, `testbed/` | **Telemetry & Testbed:** PII data masking engine, React/Vite security dashboard, and vulnerable application testbed (crAPI / VAmPI). | React, Vite, Tailwind CSS, Docker |
+| **Pranav** | `sensor/` | **Kernel Sniffer:** Writes eBPF programs to capture live traffic from the kernel without delays, and uses XDP to drop blocked IPs. | Rust, eBPF, Aya, C |
+| **Prince** *(Me)* | `parser/` | **HTTP Stream Engine:** Reassembles fragmented TCP packets, parses HTTP requests/responses, extracts user identity from JWTs, and measures latency. | Rust (Rust 2021) |
+| **Agam** | `discovery/`, `ratelimit/` | **Shadow APIs & Rate Limits:** Spots undocumented endpoints, checks them against OpenAPI documentation, and stops spammers. | Python |
+| **Hariom** | `detector/` | **BOLA & BFLA Detection:** Tracks which user owns which data ID, catches unauthorized access attempts, and issues block decisions. | Python |
+| **Meet** | `masking/`, `dashboard/`, `testbed/` | **Privacy & UI:** Strips sensitive user data (passwords, emails), builds the React web dashboard, and runs test attacks against crAPI. | React, Vite, Docker |
 
 ---
 
-## 🔬 Core Module Spotlight: `parser/` (My Ownership)
+## 🔬 Deep Dive: My Module (`parser/`)
 
-The **HTTP Parser** module acts as the critical translation pipeline between raw, fragmented kernel socket events and downstream analytical engines.
+My module is the **bridge** between the kernel capture and the detection brains.
 
-### Key Capabilities:
-* **Stateful Stream Reassembly:** Buffers incoming network slices across connection tuples (`ConnectionKey`) to assemble complete HTTP/1.x requests and responses regardless of TCP fragmentation.
-* **Deterministic Transaction Pairing:** Correlates requests and responses in strict FIFO order, computing high-precision round-trip latency (`latency_ms`).
-* **Zero-Overhead Identity Extraction:** Decodes user subjects, emails, and role claims directly from `Authorization: Bearer <JWT>`, `X-API-Key`, and custom headers without external dependencies.
-* **Universal Contract Compliance:** Emits immutable, standardized `Record` instances consumable simultaneously by discovery, rate-limiting, and detection modules.
+When the kernel grabs network packets, they come out in messy, broken byte slices. My parser:
+1. **Stitches Broken Chunks Together:** TCP often splits a single HTTP request across multiple packets. We buffer and reassemble them into complete messages.
+2. **Parses HTTP Requests:** Reads the method (`GET`, `POST`, etc.), the URL path, the headers (case-insensitively), and decodes JSON bodies safely.
+3. **Pulls User Identity:** Decodes `Authorization: Bearer <JWT>` tokens and API keys to find out *who* made the call (e.g. `user_55`) and what *role* they have (`admin` or `user`).
+4. **Times the Request:** Matches each request with its response to calculate exact round-trip latency in milliseconds (`latency_ms`).
+5. **Hands Off Clean Data:** Produces a standardized, easy-to-read `Record` for our teammates to analyze:
 
-### Standard Output Schema (`Record`):
+### What the output record looks like:
 ```json
 {
   "ts": 1731312000.104,
@@ -123,93 +131,81 @@ The **HTTP Parser** module acts as the critical translation pipeline between raw
 
 ---
 
-## 🗂️ Module File Hierarchy
+## 🗂️ How the Files are Organized
 
 ```text
 api-sentinel/
 ├── parser/                     # [PRINCE] Rust HTTP Parsing Engine
-│   ├── Cargo.toml              # Rust crate manifest & dependencies
+│   ├── Cargo.toml              # Rust crate setup and dependencies (serde, serde_json)
 │   ├── src/
-│   │   ├── lib.rs              # Crate entrypoint & exports
-│   │   ├── models.rs           # Record, RawFragment, ConnectionKey models
-│   │   ├── request.rs          # HTTP/1.x request-line, header, and body parser
-│   │   ├── auth.rs             # Zero-dependency JWT claim & API-key parser
-│   │   ├── base.rs             # HttpParser trait interface
-│   │   └── reassembler.rs      # Stateful connection tracking & latency timers
+│   │   ├── lib.rs              # Main module exports
+│   │   ├── models.rs           # Core data structures (Record, RawFragment, ConnectionKey)
+│   │   ├── request.rs          # HTTP request-line, header, and JSON body parser
+│   │   ├── auth.rs             # Safe JWT and API-key identity reader (zero dependencies)
+│   │   ├── base.rs             # HttpParser trait definition
+│   │   └── reassembler.rs      # Connection buffer tracking and latency stopwatch
 │   ├── tests/
-│   │   └── foundation_tests.rs # Cargo test suite
-│   └── README.md               # Detailed parser architectural documentation
-├── .gitignore                  # Clean repository isolation
-└── README.md                   # Project overview & documentation
+│   │   └── foundation_tests.rs # Complete test suite
+│   └── README.md               # Detailed parser module notes
+├── .gitignore                  # Keeps temporary build files out of Git
+└── README.md                   # This overview guide
 ```
 
 ---
 
-## 🚀 Developer Quickstart
+## 🚀 How to Run the Tests
 
-The parser module is engineered in **Rust (2021 Edition)** for blazing-fast, wire-speed packet processing with zero runtime overhead.
+The parser is written in **Rust** for maximum speed and security.
 
-### 1. Clone & Switch to Working Branch
+### 1. Clone the Repo & Switch to the Branch
 ```bash
 git clone https://github.com/HariomTiwari-CSE/API-Sentinel.git
 cd API-Sentinel
 git checkout Prince
 ```
 
-### 2. Run Test Suite
-Execute the comprehensive test suite with Cargo:
+### 2. Run All Tests
 ```bash
 cargo test --manifest-path parser/Cargo.toml
 ```
 
-```text
-running 15 tests
-test test_record_instantiation_defaults ... ok
-test test_record_ok_status_variations ... ok
-test test_record_serialization_roundtrip ... ok
-test test_traffic_direction_normalization ... ok
-test test_connection_key_identifiers ... ok
-test test_raw_fragment_creation ... ok
-test test_auth_extract_from_jwt_bearer ... ok
-test test_auth_extract_from_api_key_headers ... ok
-test test_auth_extract_from_user_id_headers ... ok
-test test_auth_anonymous_fallback ... ok
-test test_connection_state_buffering_and_latency ... ok
-test test_parse_simple_get_request ... ok
-test test_parse_post_request_with_json_body ... ok
-test test_parse_pipelined_requests ... ok
-test test_dummy_parser_trait ... ok
-
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
-```
+All tests pass cleanly:
+* Request-line parsing (`GET`, `POST`, `PUT`, `DELETE`, etc.)
+* Case-insensitive header lookups
+* Content-Length and chunked transfer decoding
+* Safe JSON body decoding and graceful fallback
+* JWT token claim decoding without third-party bloat
+* Connection state tracking and latency calculation
+* Multiple pipelined requests in a single stream
 
 ---
 
-## 📅 4-Week Milestone Roadmap
+## 📅 4-Week Project Roadmap
 
 ```text
-Week 1: Ingestion & Foundations
-├── [x] Day 1: Architecture analysis, contract alignment, Record & models, foundation test suite.
-├── [x] Day 2: HTTP/1.x request-line parsing, header extraction, and JSON body decoding.
-├── [ ] Day 3: HTTP response parsing, status-line resolution, and error response handling.
-├── [ ] Day 4: Stream reassembly engine, FIFO transaction pairing, and latency calculations.
-├── [ ] Day 5: Resiliency testing (TCP segmentation, chunked encoding, malformed inputs).
-├── [ ] Day 6: Cross-module pipeline verification with crAPI synthetic traffic fixtures.
-└── [ ] Day 7: Buffer day, code audit, and Mid-Review PR staging.
+Week 1: Getting the Basics Working
+├── [x] Day 1: Project setup, architecture analysis, data models, and foundation tests.
+├── [x] Day 2: HTTP request parsing, headers, chunked bodies, and JSON decoding.
+├── [ ] Day 3: HTTP response parsing, status codes, and error responses.
+├── [ ] Day 4: Stream reassembly engine, request-response pairing, and latency timing.
+├── [ ] Day 5: Handling edge cases (broken packets, weird headers, huge bodies).
+├── [ ] Day 6: Testing the pipeline with realistic traffic dumps.
+└── [ ] Day 7: Buffer day, code cleanup, and review preparation.
 
-Week 2: Detection & Mid Review
-├── Shadow API discovery & OpenAPI drift detection.
-├── Dynamic object ownership mapping & BOLA attack detection.
-└── Mid-Review Milestone: Live attack demonstration against target environment.
+Week 2: Detecting Attacks & Mid Review
+├── Automatically map all discovered API endpoints.
+├── Spot shadow APIs missing from the OpenAPI documentation.
+├── Track object ownership and catch BOLA attacks.
+└── Mid-Review Milestone: Live demo catching a simulated BOLA attack!
 
-Week 3: Active Defense & Rate Limiting
-├── Kernel blocklist synchronization (XDP / TC packet drop integration).
-└── Token-bucket rate limiting and automated bot pattern detection.
+Week 3: Active Defense
+├── Tell the eBPF kernel layer to block hostile IPs instantly.
+└── Add rate limiting and bot detection.
 
-Week 4: Visualization & Final Defense
-├── PII data masking engine integration.
-├── React security dashboard mapped to OWASP API Security Top 10.
-└── Final presentation, benchmarking, and project documentation.
+Week 4: Dashboard & Final Presentation
+├── Mask passwords and emails before sending data to the screen.
+├── Polish the React web dashboard.
+└── Final presentation, benchmarks, and report submission.
 ```
 
 ---
