@@ -17,6 +17,7 @@ ENV/
 
 # Local shell / editor artifacts
 powershell.bat
+demo.py
 *.swp
 *.swo
 .vscode/
