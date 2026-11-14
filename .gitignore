@@ -17,7 +17,6 @@ ENV/
 
 # Local shell / editor artifacts
 powershell.bat
-demo.py
 *.swp
 *.swo
 .vscode/
@@ -27,4 +26,13 @@ demo.py
 target/
 **/*.rs.bk
 Cargo.lock
+
+# Local visual dashboard (never push to repo, easy to delete)
+visualizer/
+visualizer.html
+dashboard.html
+run_dashboard.bat
+demo.py
+AGENT_PROJECT_INSTRUCTIONS.md
+
 

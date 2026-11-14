@@ -141,9 +141,10 @@ api-sentinel/
 │   │   ├── lib.rs              # Main module exports
 │   │   ├── models.rs           # Core data structures (Record, RawFragment, ConnectionKey)
 │   │   ├── request.rs          # HTTP request-line, header, and JSON body parser
+│   │   ├── response.rs         # HTTP response status-line, header, and body parser
 │   │   ├── auth.rs             # Safe JWT and API-key identity reader (zero dependencies)
 │   │   ├── base.rs             # HttpParser trait definition
-│   │   └── reassembler.rs      # Connection buffer tracking and latency stopwatch
+│   │   └── reassembler.rs      # Stream reassembly engine, request-response matching, latency
 │   ├── tests/
 │   │   └── foundation_tests.rs # Complete test suite
 │   └── README.md               # Detailed parser module notes
@@ -186,8 +187,8 @@ All tests pass cleanly:
 Week 1: Getting the Basics Working
 ├── [x] Day 1: Project setup, architecture analysis, data models, and foundation tests.
 ├── [x] Day 2: HTTP request parsing, headers, chunked bodies, and JSON decoding.
-├── [ ] Day 3: HTTP response parsing, status codes, and error responses.
-├── [ ] Day 4: Stream reassembly engine, request-response pairing, and latency timing.
+├── [x] Day 3: HTTP response parsing, status codes, request-response matching, and latency calculation.
+├── [ ] Day 4: Edge case hardening (broken packets, malformed chunks, timeout sweep).
 ├── [ ] Day 5: Handling edge cases (broken packets, weird headers, huge bodies).
 ├── [ ] Day 6: Testing the pipeline with realistic traffic dumps.
 └── [ ] Day 7: Buffer day, code cleanup, and review preparation.

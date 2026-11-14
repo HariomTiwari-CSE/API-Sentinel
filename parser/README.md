@@ -31,9 +31,10 @@ parser/
 │   ├── lib.rs                  # Module exports
 │   ├── models.rs               # Data structures (Record, RawFragment, ConnectionKey)
 │   ├── request.rs              # HTTP request-line, header, and body parser
+│   ├── response.rs             # HTTP response status-line, header, and body parser
 │   ├── auth.rs                 # Zero-dependency JWT and API-key identity reader
 │   ├── base.rs                 # HttpParser trait interface
-│   └── reassembler.rs          # Connection buffer tracking and latency stopwatch
+│   └── reassembler.rs          # TCP stream reassembly, request-response matching, latency
 ├── tests/
 │   └── foundation_tests.rs     # Integration and unit test suite
 └── README.md                   # This documentation

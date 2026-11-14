@@ -9,11 +9,13 @@ pub mod base;
 pub mod models;
 pub mod reassembler;
 pub mod request;
+pub mod response;
 
 pub use auth::{decode_base64_url, decode_jwt_payload, extract_identity_and_role};
 pub use base::HttpParser;
 pub use models::{
     ConnectionKey, ParsedHTTPRequest, ParsedHTTPResponse, RawFragment, Record, TrafficDirection,
 };
-pub use reassembler::ConnectionState;
+pub use reassembler::{canonical_connection_key, parse_endpoints, ConnectionState, StreamReassembler};
 pub use request::{parse_all_requests, parse_http_request, RequestParseResult};
+pub use response::{parse_all_responses, parse_http_response, ResponseParseResult};
