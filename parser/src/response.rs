@@ -4,13 +4,15 @@
 //! - Response Status-Line parsing: HTTP version, status code, reason phrase.
 //! - Case-insensitive HTTP response header parsing.
 //! - Content-Length and chunked Transfer-Encoding response body parsing.
+//! - Hardened against malformed chunk extensions, invalid line breaks, and trailing garbage.
+//! - Memory exhaustion protection via configurable `ParserLimits`.
 //! - Safe JSON body decoding.
 //! - Special status code semantics (204 No Content, 304 Not Modified, 1xx).
 //! - Fault-tolerant handling of incomplete, malformed, and empty responses.
 
 use std::collections::HashMap;
-use crate::models::ParsedHTTPResponse;
-use crate::request::{decode_body_content, decode_chunked_body, find_header_boundary};
+use crate::models::{ParsedHTTPResponse, ParserLimits};
+use crate::request::{decode_body_content, decode_chunked_body_with_limits, find_header_boundary};
 
 /// Result of attempting to parse an HTTP response from a byte buffer.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -21,8 +23,17 @@ pub struct ResponseParseResult {
     pub error: Option<String>,
 }
 
-/// Parse a single HTTP/1.x response from a raw byte buffer.
+/// Parse a single HTTP/1.x response from a raw byte buffer using default limits.
 pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
+    parse_http_response_with_limits(data, ts, &ParserLimits::default())
+}
+
+/// Parse a single HTTP/1.x response with configurable limits and edge-case defenses.
+pub fn parse_http_response_with_limits(
+    data: &[u8],
+    ts: f64,
+    limits: &ParserLimits,
+) -> ResponseParseResult {
     if data.is_empty() {
         return ResponseParseResult {
             response: None,
@@ -32,10 +43,29 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
         };
     }
 
-    // 1. Locate headers boundary
+    // 1. Locate headers boundary with slowloris / max-size defense
     let (header_end, body_start) = match find_header_boundary(data) {
-        Some((h_end, b_start)) => (h_end, b_start),
+        Some((h_end, b_start)) => {
+            if h_end > limits.max_header_size {
+                return ResponseParseResult {
+                    response: None,
+                    bytes_consumed: b_start,
+                    is_complete: false,
+                    error: Some(format!("Header section size {} exceeds maximum allowed limit {}", h_end, limits.max_header_size)),
+                };
+            }
+            (h_end, b_start)
+        }
         None => {
+            if data.len() > limits.max_header_size {
+                return ResponseParseResult {
+                    response: None,
+                    bytes_consumed: data.len(),
+                    is_complete: false,
+                    error: Some("Header size exceeds maximum allowed limit without delimiter".to_string()),
+                };
+            }
+
             // Check if first line exists to validate response line prefix
             if let Some(pos) = data.windows(2).position(|w| w == b"\r\n").or_else(|| data.iter().position(|&b| b == b'\n')) {
                 let first_line = String::from_utf8_lossy(&data[..pos]);
@@ -71,8 +101,27 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
         };
     }
 
+    // Reject bare CR in status line
+    if lines[0].contains('\r') {
+        return ResponseParseResult {
+            response: None,
+            bytes_consumed: body_start,
+            is_complete: false,
+            error: Some("Invalid bare CR in status line".to_string()),
+        };
+    }
+
     // 3. Parse Status-Line: HTTP_VERSION STATUS_CODE [REASON_PHRASE]
     let status_line = lines[0].trim();
+    if status_line.len() > limits.max_line_length {
+        return ResponseParseResult {
+            response: None,
+            bytes_consumed: body_start,
+            is_complete: false,
+            error: Some("Status line exceeds maximum allowed length".to_string()),
+        };
+    }
+
     let tokens: Vec<&str> = status_line.split_whitespace().collect();
 
     if tokens.len() < 2 {
@@ -117,12 +166,33 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
     let mut content_type = String::new();
     let mut content_length: Option<usize> = None;
     let mut is_chunked = false;
+    let mut header_count = 0;
 
     for line in &lines[1..] {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
+
+        if trimmed.len() > limits.max_line_length {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some("Header line exceeds maximum allowed length".to_string()),
+            };
+        }
+
+        header_count += 1;
+        if header_count > limits.max_headers_count {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some(format!("Header count exceeds maximum allowed limit {}", limits.max_headers_count)),
+            };
+        }
+
         if let Some((name, val)) = trimmed.split_once(':') {
             let h_name = name.trim().to_string();
             let h_val = val.trim().to_string();
@@ -133,6 +203,13 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
             } else if lower_name == "content-length" {
                 if let Ok(len) = h_val.parse::<usize>() {
                     content_length = Some(len);
+                } else {
+                    return ResponseParseResult {
+                        response: None,
+                        bytes_consumed: body_start,
+                        is_complete: false,
+                        error: Some(format!("Invalid non-numeric Content-Length: {}", h_val)),
+                    };
                 }
             } else if lower_name == "transfer-encoding" && h_val.to_lowercase().contains("chunked") {
                 is_chunked = true;
@@ -154,7 +231,7 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
     let (raw_body_bytes, total_consumed) = if status_code == 204 || status_code == 304 || (100..200).contains(&status_code) {
         (Vec::new(), body_start)
     } else if is_chunked {
-        let (chunk_body, wire_consumed, complete, chunk_err) = decode_chunked_body(available_body);
+        let (chunk_body, wire_consumed, complete, chunk_err) = decode_chunked_body_with_limits(available_body, limits);
         if let Some(err) = chunk_err {
             return ResponseParseResult {
                 response: None,
@@ -173,6 +250,14 @@ pub fn parse_http_response(data: &[u8], ts: f64) -> ResponseParseResult {
         }
         (chunk_body.unwrap_or_default(), body_start + wire_consumed)
     } else if let Some(cl) = content_length {
+        if cl > limits.max_body_size {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some(format!("Content-Length {} exceeds maximum allowed body limit {}", cl, limits.max_body_size)),
+            };
+        }
         if available_body.len() < cl {
             // Incomplete body, need more packets
             return ResponseParseResult {
@@ -233,14 +318,19 @@ fn default_status_text(code: u16) -> &'static str {
     }
 }
 
-/// Parse all pipelined or consecutive responses present in a buffer.
+/// Parse all pipelined or consecutive responses present in a buffer using default limits.
 pub fn parse_all_responses(data: &[u8], ts: f64) -> Vec<ParsedHTTPResponse> {
+    parse_all_responses_with_limits(data, ts, &ParserLimits::default())
+}
+
+/// Parse all pipelined or consecutive responses present in a buffer with limits.
+pub fn parse_all_responses_with_limits(data: &[u8], ts: f64, limits: &ParserLimits) -> Vec<ParsedHTTPResponse> {
     let mut responses = Vec::new();
     let mut offset = 0;
 
     while offset < data.len() {
         let remaining = &data[offset..];
-        let res = parse_http_response(remaining, ts);
+        let res = parse_http_response_with_limits(remaining, ts, limits);
         if !res.is_complete || res.response.is_none() || res.bytes_consumed == 0 {
             break;
         }

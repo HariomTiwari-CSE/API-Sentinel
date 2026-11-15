@@ -246,3 +246,57 @@ impl Record {
     }
 }
 
+/// Configurable limits to protect parser against excessive memory usage and resource exhaustion attacks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParserLimits {
+    pub max_header_size: usize,
+    pub max_body_size: usize,
+    pub max_chunk_size: usize,
+    pub max_headers_count: usize,
+    pub max_line_length: usize,
+}
+
+impl Default for ParserLimits {
+    fn default() -> Self {
+        Self {
+            max_header_size: 64 * 1024,        // 64 KB
+            max_body_size: 10 * 1024 * 1024,   // 10 MB
+            max_chunk_size: 10 * 1024 * 1024,  // 10 MB
+            max_headers_count: 100,            // 100 headers
+            max_line_length: 8192,             // 8 KB
+        }
+    }
+}
+
+impl ParserLimits {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_max_header_size(mut self, size: usize) -> Self {
+        self.max_header_size = size;
+        self
+    }
+
+    pub fn with_max_body_size(mut self, size: usize) -> Self {
+        self.max_body_size = size;
+        self
+    }
+
+    pub fn with_max_chunk_size(mut self, size: usize) -> Self {
+        self.max_chunk_size = size;
+        self
+    }
+
+    pub fn with_max_headers_count(mut self, count: usize) -> Self {
+        self.max_headers_count = count;
+        self
+    }
+
+    pub fn with_max_line_length(mut self, length: usize) -> Self {
+        self.max_line_length = length;
+        self
+    }
+}
+
+

@@ -1,11 +1,13 @@
-//! Unit tests for the API-Sentinel Rust HTTP Parser foundation, data contracts, and Day 3 response parsing.
+//! Unit tests for the API-Sentinel Rust HTTP Parser foundation, data contracts, Day 3 response parsing, and Day 4 hardening.
 
 use std::collections::HashMap;
 use std::str::FromStr;
 use api_sentinel_parser::{
-    extract_identity_and_role, parse_all_requests, parse_all_responses, parse_http_request,
-    parse_http_response, ConnectionKey, ConnectionState, HttpParser, ParsedHTTPRequest,
-    ParsedHTTPResponse, RawFragment, Record, StreamReassembler, TrafficDirection,
+    decode_chunked_body, decode_chunked_body_with_limits, extract_identity_and_role,
+    parse_all_requests, parse_all_responses, parse_http_request, parse_http_request_with_limits,
+    parse_http_response, parse_http_response_with_limits, ConnectionKey, ConnectionState,
+    HttpParser, ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record,
+    StreamReassembler, TrafficDirection,
 };
 
 #[test]
@@ -260,7 +262,6 @@ fn test_parse_response_status_codes_matrix() {
 
 #[test]
 fn test_parse_response_204_no_content_semantics() {
-    // 204 must not consume body bytes even if extra payload follows or content-length is zero
     let raw = b"HTTP/1.1 204 No Content\r\nConnection: keep-alive\r\n\r\n";
     let res = parse_http_response(raw, 100.0);
     assert!(res.is_complete);
@@ -300,12 +301,10 @@ fn test_parse_response_partial_waits_for_data() {
 
 #[test]
 fn test_parse_response_malformed_and_empty() {
-    // Empty
     let empty_res = parse_http_response(b"", 100.0);
     assert!(!empty_res.is_complete);
     assert!(empty_res.response.is_none());
 
-    // Non-HTTP garbage
     let garbage = b"INVALID_GARBAGE_PAYLOAD\r\nHeader: value\r\n\r\n";
     let garb_res = parse_http_response(garbage, 100.0);
     assert!(!garb_res.is_complete);
@@ -317,12 +316,10 @@ fn test_stream_reassembler_matching_and_latency() {
     let mut reassembler = StreamReassembler::new();
     let conn_id = "10.0.0.5:45000->10.0.0.1:8080";
 
-    // 1. Ingress Request at ts = 100.000
     let req_raw = b"GET /api/orders/1002 HTTP/1.1\r\nHost: api.crapi.local\r\n\r\n";
     let recs_in = reassembler.feed_raw(conn_id, 100.000, TrafficDirection::Ingress, req_raw);
-    assert!(recs_in.is_empty(), "Requests should be queued pending response");
+    assert!(recs_in.is_empty());
 
-    // 2. Egress Response at ts = 100.025 (25ms latency)
     let resp_body = r#"{"id": 1002, "item": "Keyboard"}"#;
     let resp_raw = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
@@ -347,13 +344,11 @@ fn test_stream_reassembler_pipelined_matching() {
     let mut reassembler = StreamReassembler::new();
     let conn_id = "192.168.1.10:50000->192.168.1.1:443";
 
-    // Send 2 pipelined requests
     let req1 = b"GET /item/1 HTTP/1.1\r\nHost: test\r\n\r\n";
     let req2 = b"GET /item/2 HTTP/1.1\r\nHost: test\r\n\r\n";
     reassembler.feed_raw(conn_id, 10.0, TrafficDirection::Ingress, req1);
     reassembler.feed_raw(conn_id, 10.01, TrafficDirection::Ingress, req2);
 
-    // Send 2 responses
     let resp1 = b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nfirst1";
     let resp2 = b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nsecond2";
 
@@ -373,7 +368,6 @@ fn test_stream_reassembler_auth_and_record_conformance() {
     let mut reassembler = StreamReassembler::new();
     let conn_id = "10.10.10.5:33000->10.10.10.1:80";
 
-    // Request with JWT Bearer Token
     let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiAidXNlcl85OSIsICJyb2xlIjogImFkbWluIn0.signature";
     let req = format!(
         "POST /api/admin/delete HTTP/1.1\r\nHost: test\r\nAuthorization: Bearer {}\r\nContent-Length: 0\r\n\r\n",
@@ -381,7 +375,6 @@ fn test_stream_reassembler_auth_and_record_conformance() {
     );
     reassembler.feed_raw(conn_id, 50.0, TrafficDirection::Ingress, req.as_bytes());
 
-    // Response
     let resp = b"HTTP/1.1 204 No Content\r\n\r\n";
     let records = reassembler.feed_raw(conn_id, 50.012, TrafficDirection::Egress, resp);
 
@@ -393,4 +386,167 @@ fn test_stream_reassembler_auth_and_record_conformance() {
     assert_eq!(rec.path, "/api/admin/delete");
     assert_eq!(rec.status, 204);
     assert_eq!(rec.latency_ms, 12.0);
+}
+
+// ---------------------------------------------------------
+// Day 4 Hardening, Limits, Timeouts & Edge Case Tests
+// ---------------------------------------------------------
+
+#[test]
+fn test_chunk_extension_parsing_and_parameters() {
+    let raw = b"5;ext=value;flag\r\nHello\r\n0\r\n\r\n";
+    let (body, consumed, complete, err) = decode_chunked_body(raw);
+    assert!(complete);
+    assert!(err.is_none());
+    assert_eq!(body.unwrap(), b"Hello");
+    assert_eq!(consumed, raw.len());
+}
+
+#[test]
+fn test_chunk_extension_rejects_control_characters() {
+    let raw = b"5;ext=\x01bad\r\nHello\r\n0\r\n\r\n";
+    let (_body, _consumed, _complete, err) = decode_chunked_body(raw);
+    assert!(err.is_some());
+    assert!(err.unwrap().contains("control character"));
+}
+
+#[test]
+fn test_chunk_size_rejects_invalid_hex_and_signs() {
+    // Leading plus
+    let (b1, _, _, e1) = decode_chunked_body(b"+5\r\nHello\r\n0\r\n\r\n");
+    assert!(b1.is_none());
+    assert!(e1.is_some());
+
+    // 0x prefix
+    let (b2, _, _, e2) = decode_chunked_body(b"0x5\r\nHello\r\n0\r\n\r\n");
+    assert!(b2.is_none());
+    assert!(e2.is_some());
+
+    // Non-hex
+    let (b3, _, _, e3) = decode_chunked_body(b"ZZ\r\nHello\r\n0\r\n\r\n");
+    assert!(b3.is_none());
+    assert!(e3.is_some());
+}
+
+#[test]
+fn test_invalid_bare_cr_rejected() {
+    let raw = b"GET /api/test HTTP/1.1\rHost: crapi.local\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "10.0.0.1", 50000, "10.0.0.2", 80);
+    assert!(!res.is_complete);
+    assert!(res.error.is_some());
+}
+
+#[test]
+fn test_parser_limits_max_header_size_enforced() {
+    let limits = ParserLimits::default().with_max_header_size(100);
+    let mut large_headers = "GET / HTTP/1.1\r\n".to_string();
+    for i in 0..10 {
+        large_headers.push_str(&format!("X-Header-{}: value-very-long-payload\r\n", i));
+    }
+    large_headers.push_str("\r\n");
+
+    let res = parse_http_request_with_limits(
+        large_headers.as_bytes(),
+        100.0,
+        "10.0.0.1",
+        1234,
+        "10.0.0.2",
+        80,
+        &limits,
+    );
+    assert!(!res.is_complete);
+    assert!(res.error.is_some());
+    assert!(res.error.unwrap().contains("exceeds maximum allowed limit"));
+}
+
+#[test]
+fn test_parser_limits_max_body_size_enforced() {
+    let limits = ParserLimits::default().with_max_body_size(50);
+    let raw = b"POST /upload HTTP/1.1\r\nContent-Length: 500\r\n\r\n";
+    let res = parse_http_request_with_limits(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 2, &limits);
+    assert!(!res.is_complete);
+    assert!(res.error.is_some());
+    assert!(res.error.unwrap().contains("exceeds maximum allowed body limit"));
+}
+
+#[test]
+fn test_parser_limits_max_headers_count_enforced() {
+    let limits = ParserLimits::default().with_max_headers_count(3);
+    let raw = b"GET / HTTP/1.1\r\nH1: 1\r\nH2: 2\r\nH3: 3\r\nH4: 4\r\n\r\n";
+    let res = parse_http_request_with_limits(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 2, &limits);
+    assert!(!res.is_complete);
+    assert!(res.error.is_some());
+    assert!(res.error.unwrap().contains("Header count exceeds maximum"));
+}
+
+#[test]
+fn test_parser_limits_max_chunk_size_enforced() {
+    let limits = ParserLimits::default().with_max_chunk_size(10);
+    let raw = b"20\r\n12345678901234567890123456789012\r\n0\r\n\r\n";
+    let (_, _, complete, err) = decode_chunked_body_with_limits(raw, &limits);
+    assert!(!complete);
+    assert!(err.is_some());
+    assert!(err.unwrap().contains("Chunk size 32 exceeds limit 10"));
+}
+
+#[test]
+fn test_stream_reassembler_idle_timeout_cleanup() {
+    let mut reassembler = StreamReassembler::with_timeout(30.0);
+    let conn1 = "10.0.0.1:1000->10.0.0.2:80";
+    let conn2 = "10.0.0.3:2000->10.0.0.2:80";
+
+    // Activity on conn1 at ts = 100.0
+    reassembler.feed_raw(conn1, 100.0, TrafficDirection::Ingress, b"GET /partial ");
+    // Activity on conn2 at ts = 120.0
+    reassembler.feed_raw(conn2, 120.0, TrafficDirection::Ingress, b"GET /other ");
+
+    assert_eq!(reassembler.active_connections().len(), 2);
+
+    // Sweep at ts = 140.0: conn1 elapsed is 40s (>30s), conn2 elapsed is 20s (<=30s)
+    let evicted = reassembler.sweep_idle_connections(140.0);
+    assert_eq!(evicted, 1);
+    assert_eq!(reassembler.active_connections().len(), 1);
+}
+
+#[test]
+fn test_stream_reassembler_orphan_response_safe_emission() {
+    let mut reassembler = StreamReassembler::new();
+    let conn_id = "192.168.1.50:60000->192.168.1.1:8080";
+
+    // Only response arrives without any prior request fragment
+    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{\"ok\": \"alone\"}";
+    let records = reassembler.feed_raw(conn_id, 200.05, TrafficDirection::Egress, resp);
+
+    assert_eq!(records.len(), 1);
+    let rec = &records[0];
+    assert_eq!(rec.method, "UNKNOWN");
+    assert_eq!(rec.path, "");
+    assert_eq!(rec.status, 200);
+    assert_eq!(rec.latency_ms, 0.0);
+    assert_eq!(rec.user, "anonymous");
+    assert_eq!(rec.role, "user");
+    assert_eq!(rec.resp_body.as_ref().unwrap()["ok"], "alone");
+    assert_eq!(reassembler.unmatched_responses_count, 1);
+}
+
+#[test]
+fn test_stream_reassembler_recovers_after_malformed_traffic() {
+    let mut reassembler = StreamReassembler::new();
+    let conn_id = "172.16.0.5:40000->172.16.0.1:80";
+
+    // Feed malformed garbage line
+    let garbage = b"GARBAGE_NOISE_WITHOUT_HTTP_METHOD\r\n";
+    reassembler.feed_raw(conn_id, 300.0, TrafficDirection::Ingress, garbage);
+
+    // Feed valid request on the same stream
+    let valid_req = b"GET /api/recovered HTTP/1.1\r\nHost: test.local\r\n\r\n";
+    reassembler.feed_raw(conn_id, 300.01, TrafficDirection::Ingress, valid_req);
+
+    // Feed response
+    let valid_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    let records = reassembler.feed_raw(conn_id, 300.03, TrafficDirection::Egress, valid_resp);
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].path, "/api/recovered");
+    assert_eq!(records[0].status, 200);
 }

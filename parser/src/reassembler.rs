@@ -3,13 +3,19 @@
 //! Maintains per-connection in-flight buffers to reassemble TCP segments across
 //! multiple kernel socket syscalls, pairs HTTP requests with responses in FIFO order,
 //! and computes accurate transaction round-trip latencies.
+//!
+//! Day 4 Hardening:
+//! - Connection idle timeout / TTL sweep (`sweep_idle_connections`) to prevent memory leaks
+//! - Configurable `ParserLimits` to bound memory usage
+//! - Safe handling of orphan/unmatched responses when capture starts mid-session
+//! - Trailing garbage drain to prevent buffer deadlocks on malformed payloads
 
 use std::collections::HashMap;
 use crate::auth::extract_identity_and_role;
 use crate::base::HttpParser;
-use crate::models::{ParsedHTTPRequest, ParsedHTTPResponse, RawFragment, Record, TrafficDirection};
-use crate::request::parse_http_request;
-use crate::response::parse_http_response;
+use crate::models::{ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, TrafficDirection};
+use crate::request::parse_http_request_with_limits;
+use crate::response::parse_http_response_with_limits;
 
 /// Tracks the byte buffers and in-flight transactions for a single TCP connection.
 #[derive(Debug, Clone, Default)]
@@ -97,26 +103,98 @@ pub fn parse_endpoints(conn_id: &str) -> (String, u16, String, u16) {
     }
 }
 
+/// Helper to find next line boundary when skipping malformed stream bytes.
+fn find_next_line_boundary(buf: &[u8]) -> usize {
+    if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
+        pos + 2
+    } else if let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+        pos + 1
+    } else {
+        buf.len()
+    }
+}
+
 /// Core stream reassembly engine that buffers network fragments, parses HTTP/1.x
 /// transactions, matches requests with responses in FIFO order, and emits standardized `Record`s.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct StreamReassembler {
     pub connections: HashMap<String, ConnectionState>,
+    pub idle_timeout_secs: f64,
+    pub limits: ParserLimits,
+    pub unmatched_responses_count: usize,
+    pub swept_connections_count: usize,
+}
+
+impl Default for StreamReassembler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamReassembler {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
+            idle_timeout_secs: 60.0,
+            limits: ParserLimits::default(),
+            unmatched_responses_count: 0,
+            swept_connections_count: 0,
         }
+    }
+
+    pub fn with_timeout(timeout_secs: f64) -> Self {
+        Self {
+            connections: HashMap::new(),
+            idle_timeout_secs: timeout_secs,
+            limits: ParserLimits::default(),
+            unmatched_responses_count: 0,
+            swept_connections_count: 0,
+        }
+    }
+
+    pub fn with_config(timeout_secs: f64, limits: ParserLimits) -> Self {
+        Self {
+            connections: HashMap::new(),
+            idle_timeout_secs: timeout_secs,
+            limits,
+            unmatched_responses_count: 0,
+            swept_connections_count: 0,
+        }
+    }
+
+    /// Sweep and evict connections that have been inactive longer than `idle_timeout_secs`.
+    /// Returns the number of connections evicted.
+    pub fn sweep_idle_connections(&mut self, current_ts: f64) -> usize {
+        let timeout = self.idle_timeout_secs;
+        if timeout <= 0.0 {
+            return 0;
+        }
+
+        let before_count = self.connections.len();
+        self.connections.retain(|_, state| {
+            if state.last_activity > 0.0 && current_ts >= state.last_activity {
+                (current_ts - state.last_activity) <= timeout
+            } else {
+                true
+            }
+        });
+        let evicted = before_count - self.connections.len();
+        self.swept_connections_count += evicted;
+        evicted
     }
 }
 
 impl HttpParser for StreamReassembler {
     fn feed_fragment(&mut self, fragment: &RawFragment) -> Vec<Record> {
+        // Automatic periodic cleanup of expired idle connections
+        if fragment.ts > 0.0 && self.idle_timeout_secs > 0.0 {
+            self.sweep_idle_connections(fragment.ts);
+        }
+
         let canon_id = canonical_connection_key(&fragment.connection_id);
         let (src_ip, src_port, dst_ip, dst_port) = parse_endpoints(&fragment.connection_id);
 
+        let limits = self.limits;
         let state = self.connections
             .entry(canon_id.clone())
             .or_insert_with(|| ConnectionState::new(&canon_id, fragment.ts));
@@ -129,23 +207,35 @@ impl HttpParser for StreamReassembler {
 
                 // Drain complete requests from ingress buffer
                 loop {
-                    let res = parse_http_request(
+                    let res = parse_http_request_with_limits(
                         &state.ingress_buffer,
                         fragment.ts,
                         &src_ip,
                         src_port,
                         &dst_ip,
                         dst_port,
+                        &limits,
                     );
 
-                    if !res.is_complete || res.request.is_none() || res.bytes_consumed == 0 {
+                    if res.is_complete && res.request.is_some() && res.bytes_consumed > 0 {
+                        let req = res.request.unwrap();
+                        let consumed = res.bytes_consumed;
+                        state.pending_requests.push(req);
+                        state.ingress_buffer.drain(..consumed);
+                    } else if res.error.is_some() {
+                        // Malformed request line or unrecoverable error:
+                        // Discard the corrupted line so subsequent pipelined requests don't stall
+                        let drain_len = if res.bytes_consumed > 0 {
+                            res.bytes_consumed
+                        } else {
+                            find_next_line_boundary(&state.ingress_buffer)
+                        };
+                        state.ingress_buffer.drain(..drain_len);
+                        break;
+                    } else {
+                        // Incomplete, waiting for more data
                         break;
                     }
-
-                    let req = res.request.unwrap();
-                    let consumed = res.bytes_consumed;
-                    state.pending_requests.push(req);
-                    state.ingress_buffer.drain(..consumed);
                 }
             }
             TrafficDirection::Egress => {
@@ -153,55 +243,69 @@ impl HttpParser for StreamReassembler {
 
                 // Drain complete responses from egress buffer
                 loop {
-                    let res = parse_http_response(&state.egress_buffer, fragment.ts);
+                    let res = parse_http_response_with_limits(&state.egress_buffer, fragment.ts, &limits);
 
-                    if !res.is_complete || res.response.is_none() || res.bytes_consumed == 0 {
-                        break;
-                    }
+                    if res.is_complete && res.response.is_some() && res.bytes_consumed > 0 {
+                        let resp = res.response.unwrap();
+                        let consumed = res.bytes_consumed;
+                        state.egress_buffer.drain(..consumed);
 
-                    let resp = res.response.unwrap();
-                    let consumed = res.bytes_consumed;
-                    state.egress_buffer.drain(..consumed);
+                        // Match with pending request (FIFO)
+                        if !state.pending_requests.is_empty() {
+                            let req = state.pending_requests.remove(0);
+                            let latency_ms = state.calculate_latency_ms(&req, &resp);
+                            let (user, role) = extract_identity_and_role(&req.headers);
+                            let client_ip = if !req.src_ip.is_empty() {
+                                req.src_ip
+                            } else {
+                                src_ip.clone()
+                            };
 
-                    // Match with pending request (FIFO)
-                    if !state.pending_requests.is_empty() {
-                        let req = state.pending_requests.remove(0);
-                        let latency_ms = state.calculate_latency_ms(&req, &resp);
-                        let (user, role) = extract_identity_and_role(&req.headers);
-                        let client_ip = if !req.src_ip.is_empty() {
-                            req.src_ip
+                            let record = Record {
+                                ts: req.ts,
+                                user,
+                                role,
+                                method: req.method,
+                                path: req.path,
+                                status: resp.status,
+                                req_body: req.body,
+                                resp_body: resp.body,
+                                latency_ms,
+                                src_ip: client_ip,
+                            };
+                            finalized_records.push(record);
                         } else {
-                            src_ip.clone()
+                            // Task 4: Orphan/unmatched response (e.g. captured mid-session or missing request fragment)
+                            self.unmatched_responses_count += 1;
+                            let client_ip = if !dst_ip.is_empty() {
+                                dst_ip.clone()
+                            } else {
+                                "unknown".to_string()
+                            };
+                            let record = Record {
+                                ts: resp.ts,
+                                user: "anonymous".to_string(),
+                                role: "user".to_string(),
+                                method: "UNKNOWN".to_string(),
+                                path: String::new(),
+                                status: resp.status,
+                                req_body: None,
+                                resp_body: resp.body,
+                                latency_ms: 0.0,
+                                src_ip: client_ip,
+                            };
+                            finalized_records.push(record);
+                        }
+                    } else if res.error.is_some() {
+                        let drain_len = if res.bytes_consumed > 0 {
+                            res.bytes_consumed
+                        } else {
+                            find_next_line_boundary(&state.egress_buffer)
                         };
-
-                        let record = Record {
-                            ts: req.ts,
-                            user,
-                            role,
-                            method: req.method,
-                            path: req.path,
-                            status: resp.status,
-                            req_body: req.body,
-                            resp_body: resp.body,
-                            latency_ms,
-                            src_ip: client_ip,
-                        };
-                        finalized_records.push(record);
+                        state.egress_buffer.drain(..drain_len);
+                        break;
                     } else {
-                        // Orphan/unmatched response (e.g. captured mid-session or missing request fragment)
-                        let record = Record {
-                            ts: resp.ts,
-                            user: "anonymous".to_string(),
-                            role: "user".to_string(),
-                            method: "UNKNOWN".to_string(),
-                            path: String::new(),
-                            status: resp.status,
-                            req_body: None,
-                            resp_body: resp.body,
-                            latency_ms: 0.0,
-                            src_ip: dst_ip.clone(),
-                        };
-                        finalized_records.push(record);
+                        break;
                     }
                 }
             }
