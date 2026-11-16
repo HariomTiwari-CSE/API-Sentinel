@@ -143,6 +143,10 @@ mod serde_bytes_or_vec {
 pub struct ParsedHTTPRequest {
     pub method: String,
     pub path: String,
+    #[serde(default)]
+    pub raw_path: String,
+    #[serde(default)]
+    pub query_params: HashMap<String, Vec<String>>,
     #[serde(default = "default_http_version")]
     pub http_version: String,
     #[serde(default)]
@@ -159,6 +163,27 @@ pub struct ParsedHTTPRequest {
     pub dst_ip: String,
     #[serde(default)]
     pub dst_port: u16,
+}
+
+impl ParsedHTTPRequest {
+    /// Return the base path of the URI without query string or fragment.
+    pub fn base_path(&self) -> &str {
+        if let Some(pos) = self.path.find('?') {
+            &self.path[..pos]
+        } else {
+            &self.path
+        }
+    }
+
+    /// Retrieve the first query parameter value for a given key.
+    pub fn get_query_param(&self, key: &str) -> Option<&str> {
+        self.query_params.get(key).and_then(|v| v.first().map(|s| s.as_str()))
+    }
+
+    /// Retrieve all query parameter values for a given key.
+    pub fn get_query_params(&self, key: &str) -> Option<&Vec<String>> {
+        self.query_params.get(key)
+    }
 }
 
 fn default_http_version() -> String {

@@ -199,6 +199,106 @@ pub fn decode_body_content(raw_bytes: &[u8], content_type: &str) -> Option<serde
     }
 }
 
+/// Decode a percent-encoded URL component (key or value).
+///
+/// Converts `+` to space (' ') and decodes `%XX` hex sequences.
+/// Preserves malformed percent sequences gracefully without panicking.
+pub fn decode_url_component(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut decoded: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => {
+                decoded.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < bytes.len() => {
+                let h1 = bytes[i + 1];
+                let h2 = bytes[i + 2];
+                if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
+                    let hex_str = match std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                        Ok(h) => h,
+                        Err(_) => {
+                            decoded.push(b'%');
+                            i += 1;
+                            continue;
+                        }
+                    };
+                    if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
+                        decoded.push(byte);
+                        i += 3;
+                    } else {
+                        decoded.push(b'%');
+                        i += 1;
+                    }
+                } else {
+                    decoded.push(b'%');
+                    i += 1;
+                }
+            }
+            b => {
+                decoded.push(b);
+                i += 1;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&decoded).to_string()
+}
+
+/// Parse a query string into a map of keys to lists of values.
+///
+/// Supports repeated keys (e.g. `id=1&id=2`), empty values, missing `=` (e.g. `flag`),
+/// percent-decoding, and proper `+` space decoding.
+pub fn parse_query_params(query_str: &str) -> HashMap<String, Vec<String>> {
+    let mut params: HashMap<String, Vec<String>> = HashMap::new();
+    let trimmed = query_str.trim().trim_start_matches('?');
+    if trimmed.is_empty() {
+        return params;
+    }
+
+    for segment in trimmed.split('&') {
+        let seg = segment.trim();
+        if seg.is_empty() {
+            continue;
+        }
+
+        let (raw_key, raw_val) = match seg.split_once('=') {
+            Some((k, v)) => (k, v),
+            None => (seg, ""),
+        };
+
+        let key = decode_url_component(raw_key.trim());
+        let val = decode_url_component(raw_val.trim());
+
+        if !key.is_empty() {
+            params.entry(key).or_default().push(val);
+        }
+    }
+
+    params
+}
+
+/// Extract base path and query parameters from a full URI.
+pub fn parse_uri_query(uri: &str) -> (String, HashMap<String, Vec<String>>) {
+    let uri_no_frag = if let Some(frag_pos) = uri.find('#') {
+        &uri[..frag_pos]
+    } else {
+        uri
+    };
+
+    if let Some(q_pos) = uri_no_frag.find('?') {
+        let base_path = uri_no_frag[..q_pos].to_string();
+        let query_str = &uri_no_frag[q_pos + 1..];
+        (base_path, parse_query_params(query_str))
+    } else {
+        (uri_no_frag.to_string(), HashMap::new())
+    }
+}
+
+
 /// Parse a single HTTP/1.x request from a raw byte buffer using default limits.
 pub fn parse_http_request(
     data: &[u8],
@@ -443,9 +543,13 @@ pub fn parse_http_request_with_limits(
     // 6. Decode Body
     let decoded_body = decode_body_content(&raw_body_bytes, &content_type);
 
+    let (_, query_params) = parse_uri_query(&path);
+
     let parsed_req = ParsedHTTPRequest {
         method,
-        path,
+        path: path.clone(),
+        raw_path: path,
+        query_params,
         http_version,
         headers,
         body: decoded_body,

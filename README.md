@@ -189,7 +189,7 @@ Week 1: Getting the Basics Working
 ├── [x] Day 2: HTTP request parsing, headers, chunked bodies, and JSON decoding.
 ├── [x] Day 3: HTTP response parsing, status codes, request-response matching, and latency calculation.
 ├── [x] Day 4: Edge case hardening (malformed chunks, bare CRs, timeout sweep, ParserLimits).
-├── [ ] Day 5: Pipeline load testing and benchmark validation.
+├── [x] Day 5: Query parameter parsing (percent-decoding, '+' handling, repeated keys, malformed queries).
 ├── [ ] Day 6: Testing the pipeline with realistic traffic dumps.
 └── [ ] Day 7: Buffer day, code cleanup, and review preparation.
 

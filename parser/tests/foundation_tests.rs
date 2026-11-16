@@ -3,11 +3,12 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 use api_sentinel_parser::{
-    decode_chunked_body, decode_chunked_body_with_limits, extract_identity_and_role,
-    parse_all_requests, parse_all_responses, parse_http_request, parse_http_request_with_limits,
-    parse_http_response, parse_http_response_with_limits, ConnectionKey, ConnectionState,
-    HttpParser, ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record,
-    StreamReassembler, TrafficDirection,
+    decode_chunked_body, decode_chunked_body_with_limits, decode_url_component,
+    extract_identity_and_role, parse_all_requests, parse_all_responses, parse_http_request,
+    parse_http_request_with_limits, parse_http_response, parse_http_response_with_limits,
+    parse_query_params, parse_uri_query, ConnectionKey, ConnectionState, HttpParser,
+    ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, StreamReassembler,
+    TrafficDirection,
 };
 
 #[test]
@@ -550,3 +551,147 @@ fn test_stream_reassembler_recovers_after_malformed_traffic() {
     assert_eq!(records[0].path, "/api/recovered");
     assert_eq!(records[0].status, 200);
 }
+
+// ---------------------------------------------------------
+// Day 5 Query Parameter Parsing & URL Decoding Tests
+// ---------------------------------------------------------
+
+#[test]
+fn test_query_param_basic_extraction() {
+    let raw = b"GET /api/orders?status=active&limit=10 HTTP/1.1\r\nHost: api.crapi.local\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "10.0.0.1", 50000, "10.0.0.2", 80);
+    assert!(res.is_complete);
+    let req = res.request.unwrap();
+
+    // Raw URI preserved
+    assert_eq!(req.path, "/api/orders?status=active&limit=10");
+    assert_eq!(req.raw_path, "/api/orders?status=active&limit=10");
+    assert_eq!(req.base_path(), "/api/orders");
+
+    // Query parameters extracted
+    assert_eq!(req.get_query_param("status"), Some("active"));
+    assert_eq!(req.get_query_param("limit"), Some("10"));
+    assert_eq!(req.get_query_param("nonexistent"), None);
+}
+
+#[test]
+fn test_query_param_plus_handling() {
+    let raw = b"GET /search?query=hello+world&author=jane+doe HTTP/1.1\r\nHost: test\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "10.0.0.1", 50000, "10.0.0.2", 80);
+    let req = res.request.unwrap();
+
+    assert_eq!(req.get_query_param("query"), Some("hello world"));
+    assert_eq!(req.get_query_param("author"), Some("jane doe"));
+}
+
+#[test]
+fn test_query_param_percent_encoding() {
+    let raw = b"GET /api/v1/user?email=alice%40example.com&tag=%23security&slash=%2Fa%2Fb HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1000, "2.2.2.2", 80);
+    let req = res.request.unwrap();
+
+    assert_eq!(req.get_query_param("email"), Some("alice@example.com"));
+    assert_eq!(req.get_query_param("tag"), Some("#security"));
+    assert_eq!(req.get_query_param("slash"), Some("/a/b"));
+}
+
+#[test]
+fn test_query_param_repeated_keys_without_loss() {
+    let raw = b"GET /filter?id=101&id=102&id=103&role=admin&role=auditor HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1000, "2.2.2.2", 80);
+    let req = res.request.unwrap();
+
+    let ids = req.get_query_params("id").unwrap();
+    assert_eq!(ids, &vec!["101".to_string(), "102".to_string(), "103".to_string()]);
+
+    let roles = req.get_query_params("role").unwrap();
+    assert_eq!(roles, &vec!["admin".to_string(), "auditor".to_string()]);
+
+    // get_query_param returns first value
+    assert_eq!(req.get_query_param("id"), Some("101"));
+}
+
+#[test]
+fn test_query_param_empty_and_missing_values() {
+    let raw = b"GET /search?flag&empty=&valid=yes&&&also= HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1000, "2.2.2.2", 80);
+    let req = res.request.unwrap();
+
+    assert_eq!(req.get_query_param("flag"), Some(""));
+    assert_eq!(req.get_query_param("empty"), Some(""));
+    assert_eq!(req.get_query_param("valid"), Some("yes"));
+    assert_eq!(req.get_query_param("also"), Some(""));
+}
+
+#[test]
+fn test_query_param_malformed_percent_encoding_safe() {
+    // Malformed sequences: %2 (incomplete), %ZZ (invalid hex), % (lone percent at end)
+    let raw = b"GET /api?broken=%2&invalid=%ZZ&tail=% HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1000, "2.2.2.2", 80);
+    assert!(res.is_complete);
+    let req = res.request.unwrap();
+
+    // Handled safely without panicking or failing
+    assert_eq!(req.get_query_param("broken"), Some("%2"));
+    assert_eq!(req.get_query_param("invalid"), Some("%ZZ"));
+    assert_eq!(req.get_query_param("tail"), Some("%"));
+}
+
+#[test]
+fn test_query_param_empty_and_no_parameters() {
+    // No query string
+    let res1 = parse_http_request(b"GET /api/users HTTP/1.1\r\n\r\n", 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let req1 = res1.request.unwrap();
+    assert!(req1.query_params.is_empty());
+    assert_eq!(req1.base_path(), "/api/users");
+
+    // Empty query question mark
+    let res2 = parse_http_request(b"GET /api/users? HTTP/1.1\r\n\r\n", 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let req2 = res2.request.unwrap();
+    assert!(req2.query_params.is_empty());
+    assert_eq!(req2.base_path(), "/api/users");
+}
+
+#[test]
+fn test_query_param_uri_with_fragment() {
+    let raw = b"GET /docs/guide?section=intro&page=1#top HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let req = res.request.unwrap();
+
+    assert_eq!(req.base_path(), "/docs/guide");
+    assert_eq!(req.get_query_param("section"), Some("intro"));
+    assert_eq!(req.get_query_param("page"), Some("1"));
+}
+
+#[test]
+fn test_query_param_utf8_percent_encoding() {
+    // UTF-8 encoded emoji (%F0%9F%94%A5 -> 🔥)
+    let raw = b"GET /search?q=%F0%9F%94%A5 HTTP/1.1\r\n\r\n";
+    let res = parse_http_request(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let req = res.request.unwrap();
+
+    assert_eq!(req.get_query_param("q"), Some("🔥"));
+}
+
+#[test]
+fn test_query_param_preserves_raw_uri_and_record_schema() {
+    let mut reassembler = StreamReassembler::new();
+    let conn = "10.0.0.1:5000->10.0.0.2:80";
+
+    // Request with query params
+    let req_bytes = b"GET /api/items?cat=tech&sort=asc HTTP/1.1\r\n\r\n";
+    reassembler.feed_raw(conn, 10.0, TrafficDirection::Ingress, req_bytes);
+
+    // Response
+    let resp_bytes = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    let records = reassembler.feed_raw(conn, 10.015, TrafficDirection::Egress, resp_bytes);
+
+    assert_eq!(records.len(), 1);
+    let rec = &records[0];
+
+    // Record preserves the raw URI path
+    assert_eq!(rec.path, "/api/items?cat=tech&sort=asc");
+    assert_eq!(rec.status, 200);
+    assert_eq!(rec.latency_ms, 15.0);
+}
+

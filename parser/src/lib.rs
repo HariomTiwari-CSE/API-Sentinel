@@ -19,9 +19,9 @@ pub use models::{
 };
 pub use reassembler::{canonical_connection_key, parse_endpoints, ConnectionState, StreamReassembler};
 pub use request::{
-    decode_chunked_body, decode_chunked_body_with_limits, parse_all_requests,
+    decode_chunked_body, decode_chunked_body_with_limits, decode_url_component, parse_all_requests,
     parse_all_requests_with_limits, parse_http_request, parse_http_request_with_limits,
-    RequestParseResult,
+    parse_query_params, parse_uri_query, RequestParseResult,
 };
 pub use response::{
     parse_all_responses, parse_all_responses_with_limits, parse_http_response,
