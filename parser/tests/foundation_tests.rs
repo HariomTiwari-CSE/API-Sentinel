@@ -515,7 +515,7 @@ fn test_stream_reassembler_orphan_response_safe_emission() {
     let conn_id = "192.168.1.50:60000->192.168.1.1:8080";
 
     // Only response arrives without any prior request fragment
-    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{\"ok\": \"alone\"}";
+    let resp = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\n\r\n{\"ok\": \"alone\"}";
     let records = reassembler.feed_raw(conn_id, 200.05, TrafficDirection::Egress, resp);
 
     assert_eq!(records.len(), 1);

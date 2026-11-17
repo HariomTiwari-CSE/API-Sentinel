@@ -84,7 +84,7 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
     // 1. Check Authorization Bearer JWT
     if let Some(auth) = lower_headers.get("authorization") {
         let auth_str = auth.trim();
-        if auth_str.len() > 7 && auth_str[..7].eq_ignore_ascii_case("bearer ") {
+        if auth_str.as_bytes().len() > 7 && auth_str.as_bytes()[..7].eq_ignore_ascii_case(b"bearer ") {
             let token = auth_str[7..].trim();
             if let Some(claims) = decode_jwt_payload(token) {
                 let user = claims.get("sub")
@@ -92,8 +92,17 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
                     .or_else(|| claims.get("username"))
                     .or_else(|| claims.get("user_id"))
                     .or_else(|| claims.get("email"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .and_then(|v| {
+                        if let Some(s) = v.as_str() {
+                            Some(s.to_string())
+                        } else if let Some(n) = v.as_i64() {
+                            Some(n.to_string())
+                        } else if let Some(u) = v.as_u64() {
+                            Some(u.to_string())
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_else(|| DEFAULT_ANONYMOUS_USER.to_string());
 
                 let role = claims.get("role")
@@ -134,11 +143,8 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
         if let Some(key_val) = lower_headers.get(*key_header) {
             let key = key_val.trim();
             if !key.is_empty() {
-                let key_id = if key.len() > 8 {
-                    format!("key_{}", &key[..8])
-                } else {
-                    format!("key_{}", key)
-                };
+                let prefix: String = key.chars().take(8).collect();
+                let key_id = format!("key_{}", prefix);
                 let role = lower_headers
                     .get("x-role")
                     .map(|v| v.trim().to_string())

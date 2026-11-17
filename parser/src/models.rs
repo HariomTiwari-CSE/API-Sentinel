@@ -271,6 +271,10 @@ impl Record {
     }
 }
 
+fn default_max_pending_requests() -> usize {
+    1024
+}
+
 /// Configurable limits to protect parser against excessive memory usage and resource exhaustion attacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParserLimits {
@@ -279,6 +283,8 @@ pub struct ParserLimits {
     pub max_chunk_size: usize,
     pub max_headers_count: usize,
     pub max_line_length: usize,
+    #[serde(default = "default_max_pending_requests")]
+    pub max_pending_requests: usize,
 }
 
 impl Default for ParserLimits {
@@ -289,6 +295,7 @@ impl Default for ParserLimits {
             max_chunk_size: 10 * 1024 * 1024,  // 10 MB
             max_headers_count: 100,            // 100 headers
             max_line_length: 8192,             // 8 KB
+            max_pending_requests: default_max_pending_requests(),
         }
     }
 }
@@ -320,6 +327,11 @@ impl ParserLimits {
 
     pub fn with_max_line_length(mut self, length: usize) -> Self {
         self.max_line_length = length;
+        self
+    }
+
+    pub fn with_max_pending_requests(mut self, count: usize) -> Self {
+        self.max_pending_requests = count;
         self
     }
 }

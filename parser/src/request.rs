@@ -355,7 +355,12 @@ pub fn parse_http_request_with_limits(
             }
 
             // Check if first line exists but headers are incomplete
-            if let Some(pos) = data.windows(2).position(|w| w == b"\r\n").or_else(|| data.iter().position(|&b| b == b'\n')) {
+            if let Some((pos, delim_len)) = data
+                .windows(2)
+                .position(|w| w == b"\r\n")
+                .map(|p| (p, 2))
+                .or_else(|| data.iter().position(|&b| b == b'\n').map(|p| (p, 1)))
+            {
                 let first_line = String::from_utf8_lossy(&data[..pos]);
                 let parts: Vec<&str> = first_line.split_whitespace().collect();
                 if let Some(method) = parts.first() {
@@ -363,7 +368,7 @@ pub fn parse_http_request_with_limits(
                     if !STANDARD_HTTP_METHODS.contains(&m_upper.as_str()) {
                         return RequestParseResult {
                             request: None,
-                            bytes_consumed: data.len(),
+                            bytes_consumed: pos + delim_len,
                             is_complete: false,
                             error: Some(format!("Malformed request line: {}", first_line)),
                         };
@@ -379,6 +384,14 @@ pub fn parse_http_request_with_limits(
         }
     };
 
+    // Helper: length of first line including delimiter for minimal malformed-line drain
+    let first_line_consumed = data
+        .windows(2)
+        .position(|w| w == b"\r\n")
+        .map(|p| p + 2)
+        .or_else(|| data.iter().position(|&b| b == b'\n').map(|p| p + 1))
+        .unwrap_or(body_start);
+
     // 2. Extract and parse header lines
     let headers_raw = String::from_utf8_lossy(&data[..header_end]);
     let lines: Vec<&str> = headers_raw.split('\n').map(|l| l.trim_end_matches('\r')).collect();
@@ -386,7 +399,7 @@ pub fn parse_http_request_with_limits(
     if lines.is_empty() || lines[0].trim().is_empty() {
         return RequestParseResult {
             request: None,
-            bytes_consumed: body_start,
+            bytes_consumed: first_line_consumed,
             is_complete: false,
             error: Some("Empty request line".to_string()),
         };
@@ -426,21 +439,48 @@ pub fn parse_http_request_with_limits(
         _ => {
             return RequestParseResult {
                 request: None,
-                bytes_consumed: body_start,
+                bytes_consumed: first_line_consumed,
                 is_complete: false,
                 error: Some(format!("Malformed request line tokens: {}", request_line)),
             };
         }
     };
 
+    if !STANDARD_HTTP_METHODS.contains(&method.as_str()) {
+        return RequestParseResult {
+            request: None,
+            bytes_consumed: first_line_consumed,
+            is_complete: false,
+            error: Some(format!("Unknown or malformed HTTP method: {}", method)),
+        };
+    }
+
+    if !http_version.to_uppercase().starts_with("HTTP/") {
+        return RequestParseResult {
+            request: None,
+            bytes_consumed: first_line_consumed,
+            is_complete: false,
+            error: Some(format!("Invalid HTTP version in request line: {}", http_version)),
+        };
+    }
+
     // 4. Parse Header Lines
-    let mut headers = HashMap::new();
+    let mut headers: HashMap<String, String> = HashMap::new();
     let mut content_type = String::new();
     let mut content_length: Option<usize> = None;
     let mut is_chunked = false;
     let mut header_count = 0;
 
     for line in &lines[1..] {
+        if line.contains('\r') {
+            return RequestParseResult {
+                request: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some("Invalid bare CR in header line".to_string()),
+            };
+        }
+
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -474,6 +514,19 @@ pub fn parse_http_request_with_limits(
                 content_type = h_val.clone();
             } else if lower_name == "content-length" {
                 if let Ok(len) = h_val.parse::<usize>() {
+                    if let Some(prev) = content_length {
+                        if prev != len {
+                            return RequestParseResult {
+                                request: None,
+                                bytes_consumed: body_start,
+                                is_complete: false,
+                                error: Some(format!(
+                                    "Conflicting duplicate Content-Length headers: {} vs {}",
+                                    prev, len
+                                )),
+                            };
+                        }
+                    }
                     content_length = Some(len);
                 } else {
                     return RequestParseResult {
@@ -487,12 +540,20 @@ pub fn parse_http_request_with_limits(
                 is_chunked = true;
             }
 
-            headers.entry(h_name)
-                .and_modify(|existing: &mut String| {
+            // Merge duplicate headers case-insensitively while preserving first-seen key casing
+            let existing_key = headers
+                .keys()
+                .find(|k| k.eq_ignore_ascii_case(&h_name))
+                .cloned();
+
+            if let Some(key) = existing_key {
+                if let Some(existing) = headers.get_mut(&key) {
                     existing.push_str(", ");
                     existing.push_str(&h_val);
-                })
-                .or_insert(h_val);
+                }
+            } else {
+                headers.insert(h_name, h_val);
+            }
         }
     }
 

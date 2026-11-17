@@ -36,8 +36,9 @@ parser/
 │   ├── base.rs                 # HttpParser trait interface
 │   └── reassembler.rs          # TCP stream reassembly, request-response matching, latency
 ├── tests/
-│   └── foundation_tests.rs     # Integration and unit test suite
-└── README.md                   # This documentation
+│   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
+│   └── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
+└── README.md                         # This documentation
 ```
 
 ---
@@ -102,5 +103,7 @@ Tests cover:
 * `ConnectionKey` forward, reverse, and bidirectional ID invariance
 * JWT claim decoding and role extraction
 * Connection buffer state and latency calculation
-* HTTP request-line, headers, chunked encoding, and JSON body parsing
-* Pipelined request parsing
+* HTTP request-line, headers, chunked encoding, query parameters, and JSON body parsing
+* HTTP response parsing, FIFO request-response matching, and orphan response handling
+* Pipelined requests, heavily fragmented TCP packets, and sustained traffic throughput/memory checks
+* Security payload preservation (SQLi, Path Traversal, BOLA/BFLA, CL-CL smuggling defense) and UTF-8 / memory-cap regression tests
