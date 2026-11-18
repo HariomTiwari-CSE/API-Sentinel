@@ -153,6 +153,8 @@ pub struct ParsedHTTPRequest {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub body: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_body: Option<Vec<u8>>,
     #[serde(default)]
     pub ts: f64,
     #[serde(default)]
@@ -184,6 +186,11 @@ impl ParsedHTTPRequest {
     pub fn get_query_params(&self, key: &str) -> Option<&Vec<String>> {
         self.query_params.get(key)
     }
+
+    /// Retrieve the raw, unparsed body bytes captured for this request, if present.
+    pub fn raw_body_bytes(&self) -> Option<&[u8]> {
+        self.raw_body.as_deref()
+    }
 }
 
 fn default_http_version() -> String {
@@ -202,8 +209,17 @@ pub struct ParsedHTTPResponse {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub body: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_body: Option<Vec<u8>>,
     #[serde(default)]
     pub ts: f64,
+}
+
+impl ParsedHTTPResponse {
+    /// Retrieve the raw, unparsed body bytes captured for this response, if present.
+    pub fn raw_body_bytes(&self) -> Option<&[u8]> {
+        self.raw_body.as_deref()
+    }
 }
 
 fn default_role() -> String {

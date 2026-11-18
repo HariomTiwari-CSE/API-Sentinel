@@ -176,26 +176,110 @@ pub fn decode_chunked_body_with_limits(
     (None, 0, false, None)
 }
 
-/// Decode raw request body into JSON value or keep as text/None.
+/// Parse an `application/x-www-form-urlencoded` string into a structured `serde_json::Value`.
+///
+/// Decodes percent-encoded characters, maps `+` to spaces, handles repeated keys
+/// as `serde_json::Value::Array`, and single values as `serde_json::Value::String`.
+/// If the body cannot be parsed into key-value pairs, returns `serde_json::Value::String`.
+pub fn parse_form_urlencoded(body: &str) -> serde_json::Value {
+    let params = parse_query_params(body);
+    if params.is_empty() {
+        return serde_json::Value::String(body.to_string());
+    }
+
+    let mut map = serde_json::Map::new();
+    for (key, values) in params {
+        if values.len() == 1 {
+            map.insert(key, serde_json::Value::String(values[0].clone()));
+        } else {
+            map.insert(
+                key,
+                serde_json::Value::Array(values.into_iter().map(serde_json::Value::String).collect()),
+            );
+        }
+    }
+    serde_json::Value::Object(map)
+}
+
+/// Decode raw request body into JSON value or keep as text/None using default ParserLimits.
 pub fn decode_body_content(raw_bytes: &[u8], content_type: &str) -> Option<serde_json::Value> {
+    decode_body_content_with_limits(raw_bytes, content_type, &ParserLimits::default())
+}
+
+/// Decode raw request body into JSON value respecting configurable ParserLimits.
+///
+/// Supports:
+/// 1. `application/json` (and `*+json`): nested objects, arrays, numbers, booleans, and null values.
+///    Malformed JSON does not panic; raw string is safely preserved.
+/// 2. `application/x-www-form-urlencoded`: decoded into a structured `serde_json::Value::Object`.
+/// 3. `text/*` (such as `text/plain`, `text/html`): preserved as `serde_json::Value::String`.
+/// 4. Payloads without explicit Content-Type: heuristics detect JSON (`{...}` or `[...]`),
+///    falling back to `serde_json::Value::String`.
+/// 5. Invalid UTF-8 / binary payloads: decoded losslessly via `String::from_utf8_lossy`.
+/// 6. Empty / whitespace-only payloads: safely return `None`.
+/// 7. Enforces `limits.max_body_size`.
+pub fn decode_body_content_with_limits(
+    raw_bytes: &[u8],
+    content_type: &str,
+    limits: &ParserLimits,
+) -> Option<serde_json::Value> {
     if raw_bytes.is_empty() {
         return None;
     }
 
-    if let Ok(text) = std::str::from_utf8(raw_bytes) {
-        let trimmed = text.trim();
-        let ct_lower = content_type.to_lowercase();
-        let is_json_header = ct_lower.contains("application/json") || ct_lower.contains("+json");
-        let looks_like_json = trimmed.starts_with('{') || trimmed.starts_with('[');
+    // Enforce maximum body size
+    let effective_bytes = if raw_bytes.len() > limits.max_body_size {
+        &raw_bytes[..limits.max_body_size]
+    } else {
+        raw_bytes
+    };
 
-        if is_json_header || looks_like_json {
+    let ct_lower = content_type.to_lowercase();
+    let is_json_header = ct_lower.contains("application/json") || ct_lower.contains("+json");
+    let is_form_header = ct_lower.contains("application/x-www-form-urlencoded");
+
+    if let Ok(text) = std::str::from_utf8(effective_bytes) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        // Case A: Form urlencoded
+        if is_form_header {
+            return Some(parse_form_urlencoded(trimmed));
+        }
+
+        // Case B: Explicit JSON Content-Type
+        if is_json_header {
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(val) => return Some(val),
+                Err(_) => {
+                    // Malformed JSON: preserve raw string safely without panicking
+                    return Some(serde_json::Value::String(text.to_string()));
+                }
+            }
+        }
+
+        // Case C: Heuristic JSON detection for untyped or text/plain payloads that look like JSON
+        let looks_like_json = (trimmed.starts_with('{') && trimmed.ends_with('}'))
+            || (trimmed.starts_with('[') && trimmed.ends_with(']'));
+
+        if looks_like_json {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
                 return Some(val);
             }
         }
+
+        // Case D: Plain text or unknown text format
         Some(serde_json::Value::String(text.to_string()))
     } else {
-        Some(serde_json::Value::String(String::from_utf8_lossy(raw_bytes).to_string()))
+        // Case E: Non-UTF-8 / Binary payloads
+        let lossy = String::from_utf8_lossy(effective_bytes).to_string();
+        if lossy.trim().is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::String(lossy))
+        }
     }
 }
 
@@ -602,7 +686,7 @@ pub fn parse_http_request_with_limits(
     };
 
     // 6. Decode Body
-    let decoded_body = decode_body_content(&raw_body_bytes, &content_type);
+    let decoded_body = decode_body_content_with_limits(&raw_body_bytes, &content_type, limits);
 
     let (_, query_params) = parse_uri_query(&path);
 
@@ -614,6 +698,7 @@ pub fn parse_http_request_with_limits(
         http_version,
         headers,
         body: decoded_body,
+        raw_body: if raw_body_bytes.is_empty() { None } else { Some(raw_body_bytes) },
         ts,
         src_ip: src_ip.to_string(),
         src_port,

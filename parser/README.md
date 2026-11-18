@@ -37,7 +37,8 @@ parser/
 │   └── reassembler.rs          # TCP stream reassembly, request-response matching, latency
 ├── tests/
 │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
-│   └── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
+│   ├── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
+│   └── body_parsing_tests.rs         # Advanced JSON, form-urlencoded & body limits tests (Day 7)
 └── README.md                         # This documentation
 ```
 
@@ -107,3 +108,4 @@ Tests cover:
 * HTTP response parsing, FIFO request-response matching, and orphan response handling
 * Pipelined requests, heavily fragmented TCP packets, and sustained traffic throughput/memory checks
 * Security payload preservation (SQLi, Path Traversal, BOLA/BFLA, CL-CL smuggling defense) and UTF-8 / memory-cap regression tests
+* Day 7 Advanced body parsing: JSON primitives, nested objects/arrays, malformed fallback, form-urlencoded key-value extraction, raw body preservation, and ParserLimits body size enforcement

@@ -12,7 +12,10 @@
 
 use std::collections::HashMap;
 use crate::models::{ParsedHTTPResponse, ParserLimits};
-use crate::request::{decode_body_content, decode_chunked_body_with_limits, find_header_boundary};
+use crate::request::{
+    decode_body_content, decode_body_content_with_limits, decode_chunked_body_with_limits,
+    find_header_boundary,
+};
 
 /// Result of attempting to parse an HTTP response from a byte buffer.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -314,7 +317,7 @@ pub fn parse_http_response_with_limits(
     };
 
     // 6. Decode Body safely
-    let decoded_body = decode_body_content(&raw_body_bytes, &content_type);
+    let decoded_body = decode_body_content_with_limits(&raw_body_bytes, &content_type, limits);
 
     let parsed_resp = ParsedHTTPResponse {
         status: status_code,
@@ -322,6 +325,7 @@ pub fn parse_http_response_with_limits(
         http_version,
         headers,
         body: decoded_body,
+        raw_body: if raw_body_bytes.is_empty() { None } else { Some(raw_body_bytes) },
         ts,
     };
 

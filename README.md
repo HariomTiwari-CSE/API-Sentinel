@@ -146,7 +146,9 @@ api-sentinel/
 │   │   ├── base.rs             # HttpParser trait definition
 │   │   └── reassembler.rs      # Stream reassembly engine, request-response matching, latency
 │   ├── tests/
-│   │   └── foundation_tests.rs # Complete test suite
+│   │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
+│   │   ├── traffic_and_security_tests.rs # Synthetic traffic & security tests (Day 6)
+│   │   └── body_parsing_tests.rs         # Advanced JSON & form body tests (Day 7)
 │   └── README.md               # Detailed parser module notes
 ├── .gitignore                  # Keeps temporary build files out of Git
 └── README.md                   # This overview guide
@@ -190,8 +192,8 @@ Week 1: Getting the Basics Working
 ├── [x] Day 3: HTTP response parsing, status codes, request-response matching, and latency calculation.
 ├── [x] Day 4: Edge case hardening (malformed chunks, bare CRs, timeout sweep, ParserLimits).
 ├── [x] Day 5: Query parameter parsing (percent-decoding, '+' handling, repeated keys, malformed queries).
-├── [ ] Day 6: Testing the pipeline with realistic traffic dumps.
-└── [ ] Day 7: Buffer day, code cleanup, and review preparation.
+├── [x] Day 6: Synthetic traffic tests, security payloads, bug fixes, and sustained perf checks.
+└── [x] Day 7: Advanced body parsing (JSON primitives, form-urlencoded, raw preservation, ParserLimits).
 
 Week 2: Detecting Attacks & Mid Review
 ├── Automatically map all discovered API endpoints.
