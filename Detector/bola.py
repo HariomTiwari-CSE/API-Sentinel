@@ -27,3 +27,17 @@ class BolaConfig:
     public_resources: frozenset = frozenset({"products", "categories"})
     privileged_roles: frozenset = frozenset({"admin"})
     learn_unowned_first_touch: bool = False  # accept deep links to never-seen IDs
+
+class BolaDetector:
+    def __init__(self, ownership: OwnershipMap | None = None, config: BolaConfig | None = None):
+        self.ownership = ownership if ownership is not None else OwnershipMap()
+        self.config = config or BolaConfig()
+        self._attempts: dict[tuple[str, str], deque] = defaultdict(deque)
+
+    # -- learning --------------------------------------------------------
+    def learn_only(self, rec: Record) -> None:
+        """Warm-up mode: learn ownership from any successful response, flag nothing."""
+        if rec.ok and rec.method in LEARN_METHODS:
+            info = parse_path(rec.path)
+            if info.learn_resource:
+                self.ownership.learn_response(rec.user, info.learn_resource, rec.resp_body)
