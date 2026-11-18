@@ -18,7 +18,9 @@ The **Rust HTTP Parser** module turns those messy bytes into clean, structured d
 2. **Parses HTTP Requests:** Extracts the method (`GET`, `POST`, etc.), the path, case-insensitive headers, and unpacks JSON request bodies safely.
 3. **Identifies the Caller:** Reads `Authorization: Bearer <JWT>` tokens or API keys to know *who* made the call (e.g. `user_55`) and their *role* (`admin` or `user`) with zero external crypto libraries.
 4. **Times the Response:** Pairs every request with its matching response to calculate exact round-trip time in milliseconds (`latency_ms`).
-5. **Outputs Clean Records:** Emits a standardized `Record` struct that can be serialized directly to JSON for downstream detection engines.
+5. **Parses Query Parameters & Form Bodies:** Decodes percent-encoded URL queries (`?key=val`), maps `+` to spaces, preserves repeated keys as arrays, and parses `application/x-www-form-urlencoded` form bodies into structured JSON objects.
+6. **Hardened Against Malicious Payloads & Overflows:** Enforces configurable `ParserLimits` (max body size, header sizes, and line lengths), preserves attack payloads (SQLi, Path Traversal) without crash, and catches CL-CL smuggling attempts.
+7. **Outputs Clean Records:** Emits a standardized `Record` struct that can be serialized directly to JSON for downstream detection engines.
 
 ---
 

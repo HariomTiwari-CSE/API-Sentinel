@@ -176,10 +176,14 @@ All tests pass cleanly:
 * Request-line parsing (`GET`, `POST`, `PUT`, `DELETE`, etc.)
 * Case-insensitive header lookups
 * Content-Length and chunked transfer decoding
-* Safe JSON body decoding and graceful fallback
+* Safe JSON body decoding (primitives, nested objects, arrays, and malformed fallback)
+* Form-URL-encoded payload parsing into structured JSON objects
+* URL query parameter extraction (percent-decoding, `+` to space, and repeated key preservation)
 * JWT token claim decoding without third-party bloat
-* Connection state tracking and latency calculation
-* Multiple pipelined requests in a single stream
+* Connection state tracking, idle connection timeout sweeps, and latency calculation
+* Multiple pipelined requests and fragmented packet reassembly in a single stream
+* Security payload preservation (SQLi, Path Traversal, BOLA/BFLA, and CL-CL smuggling defense)
+* ParserLimits enforcement (max body size, max header size, max line length)
 
 ---
 
