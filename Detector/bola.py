@@ -41,3 +41,27 @@ class BolaDetector:
             info = parse_path(rec.path)
             if info.learn_resource:
                 self.ownership.learn_response(rec.user, info.learn_resource, rec.resp_body)
+ 
+    # -- detection -------------------------------------------------------
+    def inspect(self, rec: Record) -> list[Finding]:
+        cfg = self.config
+        info = parse_path(rec.path)
+
+        # Collection endpoints (list / create): the server decides what the user gets.
+        if info.object_id is None:
+            if rec.ok and rec.method in LEARN_METHODS and info.learn_resource:
+                self.ownership.learn_response(rec.user, info.learn_resource, rec.resp_body)
+            return []
+
+        resource, oid = info.resource, info.object_id
+        if rec.role in cfg.privileged_roles or resource in cfg.public_resources:
+            return []
+
+        if self.ownership.is_authorized(rec.user, resource, oid):
+            if rec.ok and rec.method == "GET" and info.learn_resource:
+                self.ownership.learn_response(rec.user, info.learn_resource, rec.resp_body)
+            return []
+
+        owners = self.ownership.owners(resource, oid) - {rec.user}
+        if len(owners) >= cfg.public_owner_threshold:
+            return []
