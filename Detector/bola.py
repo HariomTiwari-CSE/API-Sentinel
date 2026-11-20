@@ -65,3 +65,34 @@ class BolaDetector:
         owners = self.ownership.owners(resource, oid) - {rec.user}
         if len(owners) >= cfg.public_owner_threshold:
             return []
+       
+        
+        # Unauthorized access. Never learn from this response, otherwise a
+        # successful attack would authorize itself on the next request.
+        queue = self._attempts[(rec.user, resource)]
+        queue.append((rec.ts, oid, rec.status))
+        cutoff = rec.ts - cfg.enum_window_s
+        while queue and queue[0][0] < cutoff:
+            queue.popleft()
+        distinct, run, failures = self._stats(queue)
+        enumeration = (
+            distinct >= cfg.enum_distinct_threshold
+            or run >= cfg.sequential_run
+            or failures >= cfg.fail_threshold
+        )
+
+        if not owners and rec.ok and cfg.learn_unowned_first_touch and not enumeration:
+            if info.learn_resource:
+                self.ownership.learn_response(rec.user, info.learn_resource, rec.resp_body)
+            return []
+
+        if owners and rec.ok:
+            severity, reason = "critical", "object_issued_to_other_user"
+        elif enumeration:
+            severity, reason = "high", "id_enumeration"
+        elif owners:
+            severity, reason = "medium", "other_user_object_denied"
+        elif rec.ok:
+            severity, reason = "low", "unseen_object_accessed"
+        else:
+            return []
