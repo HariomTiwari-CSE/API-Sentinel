@@ -1,7 +1,5 @@
 //! Unit tests for the API-Sentinel Rust HTTP Parser foundation, data contracts, Day 3 response parsing, and Day 4 hardening.
 
-use std::collections::HashMap;
-use std::str::FromStr;
 use api_sentinel_parser::{
     decode_chunked_body, decode_chunked_body_with_limits, decode_url_component,
     extract_identity_and_role, parse_all_requests, parse_all_responses, parse_http_request,
@@ -10,6 +8,8 @@ use api_sentinel_parser::{
     ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, StreamReassembler,
     TrafficDirection,
 };
+use std::collections::HashMap;
+use std::str::FromStr;
 
 #[test]
 fn test_record_instantiation_defaults() {
@@ -50,8 +50,11 @@ fn test_record_serialization_roundtrip() {
     record.src_ip = "192.168.1.50".to_string();
     record.role = "admin".to_string();
 
-    let json_str = record.to_json().expect("Failed to serialize Record to JSON");
-    let deserialized: Record = Record::from_json(&json_str).expect("Failed to deserialize Record from JSON");
+    let json_str = record
+        .to_json()
+        .expect("Failed to serialize Record to JSON");
+    let deserialized: Record =
+        Record::from_json(&json_str).expect("Failed to deserialize Record from JSON");
 
     assert_eq!(deserialized, record);
     assert_eq!(deserialized.role, "admin");
@@ -60,13 +63,31 @@ fn test_record_serialization_roundtrip() {
 
 #[test]
 fn test_traffic_direction_normalization() {
-    assert_eq!(TrafficDirection::from_str("ingress").unwrap(), TrafficDirection::Ingress);
-    assert_eq!(TrafficDirection::from_str("REQUEST").unwrap(), TrafficDirection::Ingress);
-    assert_eq!(TrafficDirection::from_str("in").unwrap(), TrafficDirection::Ingress);
+    assert_eq!(
+        TrafficDirection::from_str("ingress").unwrap(),
+        TrafficDirection::Ingress
+    );
+    assert_eq!(
+        TrafficDirection::from_str("REQUEST").unwrap(),
+        TrafficDirection::Ingress
+    );
+    assert_eq!(
+        TrafficDirection::from_str("in").unwrap(),
+        TrafficDirection::Ingress
+    );
 
-    assert_eq!(TrafficDirection::from_str("egress").unwrap(), TrafficDirection::Egress);
-    assert_eq!(TrafficDirection::from_str("RESPONSE").unwrap(), TrafficDirection::Egress);
-    assert_eq!(TrafficDirection::from_str("out").unwrap(), TrafficDirection::Egress);
+    assert_eq!(
+        TrafficDirection::from_str("egress").unwrap(),
+        TrafficDirection::Egress
+    );
+    assert_eq!(
+        TrafficDirection::from_str("RESPONSE").unwrap(),
+        TrafficDirection::Egress
+    );
+    assert_eq!(
+        TrafficDirection::from_str("out").unwrap(),
+        TrafficDirection::Egress
+    );
 
     assert!(TrafficDirection::from_str("invalid_dir").is_err());
 }
@@ -108,7 +129,10 @@ fn test_auth_extract_from_jwt_bearer() {
 #[test]
 fn test_auth_extract_from_api_key_headers() {
     let mut headers = HashMap::new();
-    headers.insert("X-API-Key".to_string(), "live_apikey_secret_9999".to_string());
+    headers.insert(
+        "X-API-Key".to_string(),
+        "live_apikey_secret_9999".to_string(),
+    );
 
     let (user, role) = extract_identity_and_role(&headers);
     assert_eq!(user, "key_live_api");
@@ -206,7 +230,14 @@ fn test_parse_pipelined_requests() {
     let req2 = "GET /second HTTP/1.1\r\nHost: test\r\n\r\n";
     let combined = format!("{}{}", req1, req2);
 
-    let requests = parse_all_requests(combined.as_bytes(), 100.0, "10.0.0.5", 54321, "10.0.0.1", 8080);
+    let requests = parse_all_requests(
+        combined.as_bytes(),
+        100.0,
+        "10.0.0.5",
+        54321,
+        "10.0.0.1",
+        8080,
+    );
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].path, "/first");
     assert_eq!(requests[1].path, "/second");
@@ -243,13 +274,21 @@ fn test_parse_response_status_codes_matrix() {
         ("HTTP/1.1 200 OK\r\n\r\n", 200, "OK"),
         ("HTTP/1.1 201 Created\r\n\r\n", 201, "Created"),
         ("HTTP/1.1 204 No Content\r\n\r\n", 204, "No Content"),
-        ("HTTP/1.1 301 Moved Permanently\r\n\r\n", 301, "Moved Permanently"),
+        (
+            "HTTP/1.1 301 Moved Permanently\r\n\r\n",
+            301,
+            "Moved Permanently",
+        ),
         ("HTTP/1.1 304 Not Modified\r\n\r\n", 304, "Not Modified"),
         ("HTTP/1.1 400 Bad Request\r\n\r\n", 400, "Bad Request"),
         ("HTTP/1.1 401 Unauthorized\r\n\r\n", 401, "Unauthorized"),
         ("HTTP/1.1 403 Forbidden\r\n\r\n", 403, "Forbidden"),
         ("HTTP/1.1 404 Not Found\r\n\r\n", 404, "Not Found"),
-        ("HTTP/1.1 500 Internal Server Error\r\n\r\n", 500, "Internal Server Error"),
+        (
+            "HTTP/1.1 500 Internal Server Error\r\n\r\n",
+            500,
+            "Internal Server Error",
+        ),
     ];
 
     for (raw, exp_code, exp_text) in cases {
@@ -288,7 +327,10 @@ fn test_parse_response_chunked_body() {
     assert!(res.is_complete);
     let resp = res.response.unwrap();
     assert_eq!(resp.status, 200);
-    assert_eq!(resp.body, Some(serde_json::Value::String("Hello World!".to_string())));
+    assert_eq!(
+        resp.body,
+        Some(serde_json::Value::String("Hello World!".to_string()))
+    );
 }
 
 #[test]
@@ -327,7 +369,12 @@ fn test_stream_reassembler_matching_and_latency() {
         resp_body.len(),
         resp_body
     );
-    let recs_out = reassembler.feed_raw(conn_id, 100.025, TrafficDirection::Egress, resp_raw.as_bytes());
+    let recs_out = reassembler.feed_raw(
+        conn_id,
+        100.025,
+        TrafficDirection::Egress,
+        resp_raw.as_bytes(),
+    );
 
     assert_eq!(recs_out.len(), 1);
     let record = &recs_out[0];
@@ -467,7 +514,10 @@ fn test_parser_limits_max_body_size_enforced() {
     let res = parse_http_request_with_limits(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 2, &limits);
     assert!(!res.is_complete);
     assert!(res.error.is_some());
-    assert!(res.error.unwrap().contains("exceeds maximum allowed body limit"));
+    assert!(res
+        .error
+        .unwrap()
+        .contains("exceeds maximum allowed body limit"));
 }
 
 #[test]
@@ -602,7 +652,10 @@ fn test_query_param_repeated_keys_without_loss() {
     let req = res.request.unwrap();
 
     let ids = req.get_query_params("id").unwrap();
-    assert_eq!(ids, &vec!["101".to_string(), "102".to_string(), "103".to_string()]);
+    assert_eq!(
+        ids,
+        &vec!["101".to_string(), "102".to_string(), "103".to_string()]
+    );
 
     let roles = req.get_query_params("role").unwrap();
     assert_eq!(roles, &vec!["admin".to_string(), "auditor".to_string()]);
@@ -640,13 +693,27 @@ fn test_query_param_malformed_percent_encoding_safe() {
 #[test]
 fn test_query_param_empty_and_no_parameters() {
     // No query string
-    let res1 = parse_http_request(b"GET /api/users HTTP/1.1\r\n\r\n", 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let res1 = parse_http_request(
+        b"GET /api/users HTTP/1.1\r\n\r\n",
+        100.0,
+        "1.1.1.1",
+        1,
+        "2.2.2.2",
+        2,
+    );
     let req1 = res1.request.unwrap();
     assert!(req1.query_params.is_empty());
     assert_eq!(req1.base_path(), "/api/users");
 
     // Empty query question mark
-    let res2 = parse_http_request(b"GET /api/users? HTTP/1.1\r\n\r\n", 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
+    let res2 = parse_http_request(
+        b"GET /api/users? HTTP/1.1\r\n\r\n",
+        100.0,
+        "1.1.1.1",
+        1,
+        "2.2.2.2",
+        2,
+    );
     let req2 = res2.request.unwrap();
     assert!(req2.query_params.is_empty());
     assert_eq!(req2.base_path(), "/api/users");
@@ -694,4 +761,3 @@ fn test_query_param_preserves_raw_uri_and_record_schema() {
     assert_eq!(rec.status, 200);
     assert_eq!(rec.latency_ms, 15.0);
 }
-

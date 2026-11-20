@@ -40,7 +40,8 @@ parser/
 ├── tests/
 │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
 │   ├── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
-│   └── body_parsing_tests.rs         # Advanced JSON, form-urlencoded & body limits tests (Day 7)
+│   ├── body_parsing_tests.rs         # Advanced JSON, form-urlencoded & body limits tests (Day 7)
+│   └── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
 └── README.md                         # This documentation
 ```
 
@@ -111,3 +112,4 @@ Tests cover:
 * Pipelined requests, heavily fragmented TCP packets, and sustained traffic throughput/memory checks
 * Security payload preservation (SQLi, Path Traversal, BOLA/BFLA, CL-CL smuggling defense) and UTF-8 / memory-cap regression tests
 * Day 7 Advanced body parsing: JSON primitives, nested objects/arrays, malformed fallback, form-urlencoded key-value extraction, raw body preservation, and ParserLimits body size enforcement
+* Day 8 End-to-End integration contract review: Downstream `Record` compatibility (`Detector/model.py`), raw body byte retention vs decoded text, multi-connection concurrency stress (50 streams), bounded memory buffers, and idle connection timeout sweeps

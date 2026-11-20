@@ -10,12 +10,14 @@
 //! - Safe handling of orphan/unmatched responses when capture starts mid-session
 //! - Trailing garbage drain to prevent buffer deadlocks on malformed payloads
 
-use std::collections::HashMap;
 use crate::auth::extract_identity_and_role;
 use crate::base::HttpParser;
-use crate::models::{ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, TrafficDirection};
+use crate::models::{
+    ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, TrafficDirection,
+};
 use crate::request::parse_http_request_with_limits;
 use crate::response::parse_http_response_with_limits;
+use std::collections::HashMap;
 
 /// Tracks the byte buffers and in-flight transactions for a single TCP connection.
 #[derive(Debug, Clone, Default)]
@@ -209,7 +211,8 @@ impl HttpParser for StreamReassembler {
         let (src_ip, src_port, dst_ip, dst_port) = parse_endpoints(&fragment.connection_id);
 
         let limits = self.limits;
-        let state = self.connections
+        let state = self
+            .connections
             .entry(canon_id.clone())
             .or_insert_with(|| ConnectionState::new(&canon_id, fragment.ts));
 
@@ -266,7 +269,9 @@ impl HttpParser for StreamReassembler {
                 }
 
                 // Release excess allocated memory after large payloads drain
-                if state.ingress_buffer.is_empty() && state.ingress_buffer.capacity() > BUFFER_SHRINK_THRESHOLD {
+                if state.ingress_buffer.is_empty()
+                    && state.ingress_buffer.capacity() > BUFFER_SHRINK_THRESHOLD
+                {
                     state.ingress_buffer.shrink_to(BUFFER_SHRINK_TARGET);
                 }
             }
@@ -279,7 +284,8 @@ impl HttpParser for StreamReassembler {
                         break;
                     }
 
-                    let res = parse_http_response_with_limits(&state.egress_buffer, fragment.ts, &limits);
+                    let res =
+                        parse_http_response_with_limits(&state.egress_buffer, fragment.ts, &limits);
 
                     if res.is_complete && res.response.is_some() && res.bytes_consumed > 0 {
                         let resp = res.response.unwrap();
@@ -349,7 +355,9 @@ impl HttpParser for StreamReassembler {
                 }
 
                 // Release excess allocated memory after large payloads drain
-                if state.egress_buffer.is_empty() && state.egress_buffer.capacity() > BUFFER_SHRINK_THRESHOLD {
+                if state.egress_buffer.is_empty()
+                    && state.egress_buffer.capacity() > BUFFER_SHRINK_THRESHOLD
+                {
                     state.egress_buffer.shrink_to(BUFFER_SHRINK_TARGET);
                 }
             }

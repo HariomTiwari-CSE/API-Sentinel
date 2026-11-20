@@ -4,12 +4,12 @@
 //! Note: All security payloads (SQLi, Path Traversal, BOLA/BFLA, CL-CL smuggling) are strictly
 //! static byte test fixtures to verify faithful extraction and resilience; they are never executed.
 
-use std::collections::HashMap;
-use std::time::Instant;
 use api_sentinel_parser::{
     extract_identity_and_role, parse_http_request, parse_http_response, HttpParser, ParserLimits,
     StreamReassembler, TrafficDirection,
 };
+use std::collections::HashMap;
+use std::time::Instant;
 
 // -----------------------------------------------------------------------------
 // 1. Realistic Synthetic Mixed Traffic (GET / POST / PATCH / DELETE + Matching)
@@ -22,7 +22,8 @@ fn test_synthetic_mixed_api_session_workflow() {
     let conn_rev = "10.20.0.1:8080->10.20.0.15:51234";
 
     // JWT: {"sub":"user_101","role":"user"}
-    let jwt_user = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEwMSIsInJvbGUiOiJ1c2VyIn0.sig";
+    let jwt_user =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEwMSIsInJvbGUiOiJ1c2VyIn0.sig";
 
     // Step 1: POST /api/v1/auth/login
     let login_body = r#"{"email":"alice@crapi.local","password":"redacted_test_value"}"#;
@@ -39,15 +40,28 @@ fn test_synthetic_mixed_api_session_workflow() {
     );
 
     assert!(reassembler
-        .feed_raw(conn_fwd, 1000.000, TrafficDirection::Ingress, req1.as_bytes())
+        .feed_raw(
+            conn_fwd,
+            1000.000,
+            TrafficDirection::Ingress,
+            req1.as_bytes()
+        )
         .is_empty());
-    let recs1 = reassembler.feed_raw(conn_rev, 1000.018, TrafficDirection::Egress, resp1.as_bytes());
+    let recs1 = reassembler.feed_raw(
+        conn_rev,
+        1000.018,
+        TrafficDirection::Egress,
+        resp1.as_bytes(),
+    );
     assert_eq!(recs1.len(), 1);
     assert_eq!(recs1[0].method, "POST");
     assert_eq!(recs1[0].path, "/api/v1/auth/login");
     assert_eq!(recs1[0].status, 200);
     assert_eq!(recs1[0].latency_ms, 18.0);
-    assert_eq!(recs1[0].req_body.as_ref().unwrap()["email"], "alice@crapi.local");
+    assert_eq!(
+        recs1[0].req_body.as_ref().unwrap()["email"],
+        "alice@crapi.local"
+    );
     assert_eq!(recs1[0].resp_body.as_ref().unwrap()["expires_in"], 3600);
 
     // Step 2: GET /api/v1/orders?status=open&page=1
@@ -61,8 +75,18 @@ fn test_synthetic_mixed_api_session_workflow() {
         resp2_body.len(),
         resp2_body
     );
-    reassembler.feed_raw(conn_fwd, 1001.000, TrafficDirection::Ingress, req2.as_bytes());
-    let recs2 = reassembler.feed_raw(conn_rev, 1001.012, TrafficDirection::Egress, resp2.as_bytes());
+    reassembler.feed_raw(
+        conn_fwd,
+        1001.000,
+        TrafficDirection::Ingress,
+        req2.as_bytes(),
+    );
+    let recs2 = reassembler.feed_raw(
+        conn_rev,
+        1001.012,
+        TrafficDirection::Egress,
+        resp2.as_bytes(),
+    );
     assert_eq!(recs2.len(), 1);
     assert_eq!(recs2[0].user, "user_101");
     assert_eq!(recs2[0].role, "user");
@@ -76,7 +100,12 @@ fn test_synthetic_mixed_api_session_workflow() {
         jwt_user
     );
     let resp3 = b"HTTP/1.1 204 No Content\r\nConnection: keep-alive\r\n\r\n";
-    reassembler.feed_raw(conn_fwd, 1002.500, TrafficDirection::Ingress, req3.as_bytes());
+    reassembler.feed_raw(
+        conn_fwd,
+        1002.500,
+        TrafficDirection::Ingress,
+        req3.as_bytes(),
+    );
     let recs3 = reassembler.feed_raw(conn_rev, 1002.507, TrafficDirection::Egress, resp3);
     assert_eq!(recs3.len(), 1);
     assert_eq!(recs3[0].method, "DELETE");
@@ -106,8 +135,18 @@ fn test_pipelined_batch_and_batched_responses_fifo() {
         "HTTP/1.1 204 No Content\r\n\r\n"
     );
 
-    reassembler.feed_raw(conn, 500.000, TrafficDirection::Ingress, pipelined_reqs.as_bytes());
-    let records = reassembler.feed_raw(conn, 500.045, TrafficDirection::Egress, batched_resps.as_bytes());
+    reassembler.feed_raw(
+        conn,
+        500.000,
+        TrafficDirection::Ingress,
+        pipelined_reqs.as_bytes(),
+    );
+    let records = reassembler.feed_raw(
+        conn,
+        500.045,
+        TrafficDirection::Egress,
+        batched_resps.as_bytes(),
+    );
 
     assert_eq!(records.len(), 3);
     assert_eq!(records[0].method, "GET");
@@ -190,12 +229,22 @@ fn test_security_payload_sqli_preservation() {
         sqli_body
     );
 
-    let res = parse_http_request(raw.as_bytes(), 100.0, "198.51.100.23", 44444, "10.0.0.1", 80);
+    let res = parse_http_request(
+        raw.as_bytes(),
+        100.0,
+        "198.51.100.23",
+        44444,
+        "10.0.0.1",
+        80,
+    );
     assert!(res.is_complete);
     let req = res.request.unwrap();
 
     // Raw URI preserved for signature/WAF inspection
-    assert_eq!(req.path, "/api/products?id=1%27+OR+%271%27%3D%271&sort=price;SELECT+1");
+    assert_eq!(
+        req.path,
+        "/api/products?id=1%27+OR+%271%27%3D%271&sort=price;SELECT+1"
+    );
     assert_eq!(req.base_path(), "/api/products");
 
     // Decoded query parameters faithfully extracted
@@ -225,7 +274,8 @@ fn test_security_payload_bola_and_bfla_record_extraction() {
     let conn = "203.0.113.77:60001->10.0.0.10:8080";
 
     // Low-privilege user_101 (role=user)
-    let jwt_user = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEwMSIsInJvbGUiOiJ1c2VyIn0.sig";
+    let jwt_user =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEwMSIsInJvbGUiOiJ1c2VyIn0.sig";
 
     // BOLA pattern: user_101 reading victim user_999's invoice
     let bola_req = format!(
@@ -240,14 +290,21 @@ fn test_security_payload_bola_and_bfla_record_extraction() {
     );
 
     reassembler.feed_raw(conn, 10.000, TrafficDirection::Ingress, bola_req.as_bytes());
-    let recs_bola = reassembler.feed_raw(conn, 10.015, TrafficDirection::Egress, bola_resp.as_bytes());
+    let recs_bola =
+        reassembler.feed_raw(conn, 10.015, TrafficDirection::Egress, bola_resp.as_bytes());
     assert_eq!(recs_bola.len(), 1);
     assert_eq!(recs_bola[0].user, "user_101");
     assert_eq!(recs_bola[0].role, "user");
-    assert_eq!(recs_bola[0].path, "/api/v2/users/999/invoices/4042?include_pii=true");
+    assert_eq!(
+        recs_bola[0].path,
+        "/api/v2/users/999/invoices/4042?include_pii=true"
+    );
     assert_eq!(recs_bola[0].status, 200);
     assert_eq!(recs_bola[0].src_ip, "203.0.113.77");
-    assert_eq!(recs_bola[0].resp_body.as_ref().unwrap()["owner"], "user_999");
+    assert_eq!(
+        recs_bola[0].resp_body.as_ref().unwrap()["owner"],
+        "user_999"
+    );
 
     // BFLA pattern: normal user calling privileged admin DELETE endpoint
     let bfla_req = format!(
@@ -279,7 +336,10 @@ fn test_auth_utf8_multibyte_headers_no_panic() {
     assert_eq!(role, "user");
 
     let mut headers2 = HashMap::new();
-    headers2.insert("Authorization".to_string(), "🔥🔥🔥not_bearer_utf8".to_string());
+    headers2.insert(
+        "Authorization".to_string(),
+        "🔥🔥🔥not_bearer_utf8".to_string(),
+    );
     let (user2, role2) = extract_identity_and_role(&headers2);
     assert_eq!(user2, "anonymous");
     assert_eq!(role2, "user");
@@ -300,24 +360,35 @@ fn test_auth_jwt_numeric_sub_claim() {
 #[test]
 fn test_conflicting_duplicate_content_length_rejected() {
     // CL-CL smuggling vector: two Content-Length headers with different values
-    let req_raw = b"POST /api/pay HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\n1234567890";
+    let req_raw =
+        b"POST /api/pay HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\n1234567890";
     let req_res = parse_http_request(req_raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 80);
     assert!(!req_res.is_complete);
-    assert!(req_res.error.unwrap().contains("Conflicting duplicate Content-Length"));
+    assert!(req_res
+        .error
+        .unwrap()
+        .contains("Conflicting duplicate Content-Length"));
 
     let resp_raw = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 8\r\n\r\n12345678";
     let resp_res = parse_http_response(resp_raw, 100.0);
     assert!(!resp_res.is_complete);
-    assert!(resp_res.error.unwrap().contains("Conflicting duplicate Content-Length"));
+    assert!(resp_res
+        .error
+        .unwrap()
+        .contains("Conflicting duplicate Content-Length"));
 }
 
 #[test]
 fn test_case_insensitive_duplicate_headers_merged() {
-    let raw = b"GET /test HTTP/1.1\r\nX-Forwarded-For: 10.0.0.1\r\nx-forwarded-for: 10.0.0.2\r\n\r\n";
+    let raw =
+        b"GET /test HTTP/1.1\r\nX-Forwarded-For: 10.0.0.1\r\nx-forwarded-for: 10.0.0.2\r\n\r\n";
     let res = parse_http_request(raw, 100.0, "1.1.1.1", 1, "2.2.2.2", 80);
     assert!(res.is_complete);
     let req = res.request.unwrap();
-    assert_eq!(req.headers.get("X-Forwarded-For").unwrap(), "10.0.0.1, 10.0.0.2");
+    assert_eq!(
+        req.headers.get("X-Forwarded-For").unwrap(),
+        "10.0.0.1, 10.0.0.2"
+    );
     assert!(!req.headers.contains_key("x-forwarded-for"));
 }
 
@@ -327,7 +398,8 @@ fn test_garbage_line_followed_by_valid_request_in_same_packet() {
     let conn = "10.0.0.9:41000->10.0.0.1:80";
 
     // Corrupted prefix line + valid HTTP request packed inside the exact same TCP packet
-    let combined = b"CORRUPTED_NOISE_LINE\r\nGET /api/recovered-same-pkt HTTP/1.1\r\nHost: ok.local\r\n\r\n";
+    let combined =
+        b"CORRUPTED_NOISE_LINE\r\nGET /api/recovered-same-pkt HTTP/1.1\r\nHost: ok.local\r\n\r\n";
     reassembler.feed_raw(conn, 100.0, TrafficDirection::Ingress, combined);
 
     let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
@@ -347,7 +419,12 @@ fn test_pending_requests_cap_prevents_unbounded_memory_growth() {
     // Flood 20 pipelined requests without sending any responses
     for i in 0..20 {
         let req = format!("GET /api/flood/{} HTTP/1.1\r\nHost: test\r\n\r\n", i);
-        reassembler.feed_raw(conn, 100.0 + i as f64, TrafficDirection::Ingress, req.as_bytes());
+        reassembler.feed_raw(
+            conn,
+            100.0 + i as f64,
+            TrafficDirection::Ingress,
+            req.as_bytes(),
+        );
     }
 
     // Pending queue must remain capped at 5 (holding the 5 most recent requests)
@@ -402,7 +479,8 @@ fn test_sustained_traffic_throughput_and_memory_stability() {
         for c in 0..num_connections {
             let conn = format!("10.1.0.{}:{}->10.0.0.1:8080", (c % 250) + 1, 40000 + c);
             reassembler.feed_raw(&conn, ts, TrafficDirection::Ingress, req_template);
-            let recs = reassembler.feed_raw(&conn, ts + 0.005, TrafficDirection::Egress, resp_template);
+            let recs =
+                reassembler.feed_raw(&conn, ts + 0.005, TrafficDirection::Egress, resp_template);
             total_records += recs.len();
         }
         ts += 0.1 * ((round % 3) as f64 + 1.0);

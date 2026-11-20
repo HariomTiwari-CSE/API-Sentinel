@@ -72,22 +72,26 @@ pub fn decode_jwt_payload(token: &str) -> Option<serde_json::Value> {
 /// Extract user identity and role claim from normalized HTTP headers.
 pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, String) {
     if headers.is_empty() {
-        return (DEFAULT_ANONYMOUS_USER.to_string(), DEFAULT_USER_ROLE.to_string());
+        return (
+            DEFAULT_ANONYMOUS_USER.to_string(),
+            DEFAULT_USER_ROLE.to_string(),
+        );
     }
 
     // Convert keys to lowercase for case-insensitive lookup
-    let lower_headers: HashMap<String, &String> = headers
-        .iter()
-        .map(|(k, v)| (k.to_lowercase(), v))
-        .collect();
+    let lower_headers: HashMap<String, &String> =
+        headers.iter().map(|(k, v)| (k.to_lowercase(), v)).collect();
 
     // 1. Check Authorization Bearer JWT
     if let Some(auth) = lower_headers.get("authorization") {
         let auth_str = auth.trim();
-        if auth_str.as_bytes().len() > 7 && auth_str.as_bytes()[..7].eq_ignore_ascii_case(b"bearer ") {
+        if auth_str.as_bytes().len() > 7
+            && auth_str.as_bytes()[..7].eq_ignore_ascii_case(b"bearer ")
+        {
             let token = auth_str[7..].trim();
             if let Some(claims) = decode_jwt_payload(token) {
-                let user = claims.get("sub")
+                let user = claims
+                    .get("sub")
                     .or_else(|| claims.get("user"))
                     .or_else(|| claims.get("username"))
                     .or_else(|| claims.get("user_id"))
@@ -105,13 +109,16 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
                     })
                     .unwrap_or_else(|| DEFAULT_ANONYMOUS_USER.to_string());
 
-                let role = claims.get("role")
+                let role = claims
+                    .get("role")
                     .or_else(|| claims.get("scope"))
                     .and_then(|v| {
                         if let Some(s) = v.as_str() {
                             Some(s.to_string())
                         } else if let Some(arr) = v.as_array() {
-                            arr.first().and_then(|item| item.as_str()).map(|s| s.to_string())
+                            arr.first()
+                                .and_then(|item| item.as_str())
+                                .map(|s| s.to_string())
                         } else {
                             None
                         }
@@ -154,6 +161,8 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
         }
     }
 
-    (DEFAULT_ANONYMOUS_USER.to_string(), DEFAULT_USER_ROLE.to_string())
+    (
+        DEFAULT_ANONYMOUS_USER.to_string(),
+        DEFAULT_USER_ROLE.to_string(),
+    )
 }
-

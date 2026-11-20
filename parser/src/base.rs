@@ -33,4 +33,3 @@ pub trait HttpParser {
     /// Return list of connection IDs currently holding buffered in-flight data.
     fn active_connections(&self) -> Vec<String>;
 }
-

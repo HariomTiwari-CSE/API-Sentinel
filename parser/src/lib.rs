@@ -17,7 +17,9 @@ pub use models::{
     ConnectionKey, ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record,
     TrafficDirection,
 };
-pub use reassembler::{canonical_connection_key, parse_endpoints, ConnectionState, StreamReassembler};
+pub use reassembler::{
+    canonical_connection_key, parse_endpoints, ConnectionState, StreamReassembler,
+};
 pub use request::{
     decode_body_content, decode_body_content_with_limits, decode_chunked_body,
     decode_chunked_body_with_limits, decode_url_component, parse_all_requests,

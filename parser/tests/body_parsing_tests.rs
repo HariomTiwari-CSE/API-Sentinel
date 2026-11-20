@@ -14,13 +14,13 @@
 //! 11. Schema compatibility with downstream `Record` serialization.
 //! 12. End-to-end `StreamReassembler` transaction matching with parsed bodies.
 
-use std::collections::HashMap;
 use api_sentinel_parser::{
     decode_body_content, decode_body_content_with_limits, parse_form_urlencoded,
     parse_http_request, parse_http_request_with_limits, parse_http_response,
     parse_http_response_with_limits, ConnectionKey, ParserLimits, RawFragment, Record,
     StreamReassembler, TrafficDirection,
 };
+use std::collections::HashMap;
 
 #[test]
 fn test_json_body_nested_objects_and_arrays() {
@@ -73,8 +73,12 @@ fn test_json_body_primitives_null_bool_numbers() {
     assert_eq!(val_float, Some(serde_json::json!(-3.14159)));
 
     // 4. JSON string
-    let val_str = decode_body_content_with_limits(b"\"scalar-token-string\"", "application/json", &limits);
-    assert_eq!(val_str, Some(serde_json::Value::String("scalar-token-string".to_string())));
+    let val_str =
+        decode_body_content_with_limits(b"\"scalar-token-string\"", "application/json", &limits);
+    assert_eq!(
+        val_str,
+        Some(serde_json::Value::String("scalar-token-string".to_string()))
+    );
 }
 
 #[test]
@@ -93,7 +97,10 @@ Content-Length: 35
     // Must not panic, must preserve the exact raw string
     let body = req.body.expect("Expected body");
     assert!(body.is_string());
-    assert_eq!(body.as_str().unwrap(), "{\"order_id\": 998, \"items\": [1, 2, ");
+    assert_eq!(
+        body.as_str().unwrap(),
+        "{\"order_id\": 998, \"items\": [1, 2, "
+    );
 }
 
 #[test]
@@ -179,7 +186,9 @@ Log line 1: system normal status"#;
     let req = res.request.unwrap();
     assert_eq!(
         req.body,
-        Some(serde_json::Value::String("Log line 1: system normal status".to_string()))
+        Some(serde_json::Value::String(
+            "Log line 1: system normal status".to_string()
+        ))
     );
 
     // 2. HTML text
@@ -194,7 +203,9 @@ Content-Length: 38
     let resp = resp_res.response.unwrap();
     assert_eq!(
         resp.body,
-        Some(serde_json::Value::String("<html><body>Page Not Found</body></html>".to_string()))
+        Some(serde_json::Value::String(
+            "<html><body>Page Not Found</body></html>".to_string()
+        ))
     );
 }
 
@@ -246,7 +257,10 @@ fn test_empty_and_whitespace_bodies() {
     assert_eq!(decode_body_content(&[], "application/json"), None);
 
     // 2. Whitespace only
-    assert_eq!(decode_body_content(b"   \r\n\t  ", "application/json"), None);
+    assert_eq!(
+        decode_body_content(b"   \r\n\t  ", "application/json"),
+        None
+    );
     assert_eq!(decode_body_content(b" \n ", "text/plain"), None);
 
     // 3. HTTP Request with Content-Length: 0
@@ -273,10 +287,21 @@ Content-Length: 128
 
 12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"#;
 
-    let res = parse_http_request_with_limits(huge_req, 100.0, "10.0.0.1", 5000, "10.0.0.2", 80, &tight_limits);
+    let res = parse_http_request_with_limits(
+        huge_req,
+        100.0,
+        "10.0.0.1",
+        5000,
+        "10.0.0.2",
+        80,
+        &tight_limits,
+    );
     assert!(!res.is_complete);
     assert!(res.request.is_none());
-    assert!(res.error.unwrap().contains("exceeds maximum allowed body limit 64"));
+    assert!(res
+        .error
+        .unwrap()
+        .contains("exceeds maximum allowed body limit 64"));
 
     // Response exceeding max_body_size
     let huge_resp = br#"HTTP/1.1 200 OK
@@ -287,7 +312,10 @@ Content-Length: 128
     let r_res = parse_http_response_with_limits(huge_resp, 100.0, &tight_limits);
     assert!(!r_res.is_complete);
     assert!(r_res.response.is_none());
-    assert!(r_res.error.unwrap().contains("exceeds maximum allowed body limit 64"));
+    assert!(r_res
+        .error
+        .unwrap()
+        .contains("exceeds maximum allowed body limit 64"));
 
     // Direct decode_body_content_with_limits capping
     let raw = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

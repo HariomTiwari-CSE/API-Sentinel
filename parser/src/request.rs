@@ -9,8 +9,8 @@
 //! - Safe JSON body decoding.
 //! - Fault-tolerant handling of incomplete, malformed, and empty requests.
 
-use std::collections::HashMap;
 use crate::models::{ParsedHTTPRequest, ParserLimits};
+use std::collections::HashMap;
 
 /// Result of attempting to parse an HTTP request from a byte buffer.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -23,8 +23,7 @@ pub struct RequestParseResult {
 
 /// Standard known HTTP methods.
 pub const STANDARD_HTTP_METHODS: &[&str] = &[
-    "GET", "POST", "PUT", "DELETE", "PATCH",
-    "HEAD", "OPTIONS", "TRACE", "CONNECT",
+    "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT",
 ];
 
 /// Find the boundary separating HTTP headers from the body.
@@ -61,24 +60,37 @@ pub fn decode_chunked_body_with_limits(
 
     while offset < payload.len() {
         let remaining = &payload[offset..];
-        let (line_end, delim_len) = if let Some(pos) = remaining.windows(2).position(|w| w == b"\r\n") {
-            (pos, 2)
-        } else if let Some(pos) = remaining.iter().position(|&b| b == b'\n') {
-            (pos, 1)
-        } else {
-            return (None, 0, false, None); // Incomplete chunk header line
-        };
+        let (line_end, delim_len) =
+            if let Some(pos) = remaining.windows(2).position(|w| w == b"\r\n") {
+                (pos, 2)
+            } else if let Some(pos) = remaining.iter().position(|&b| b == b'\n') {
+                (pos, 1)
+            } else {
+                return (None, 0, false, None); // Incomplete chunk header line
+            };
 
         let size_slice = &remaining[..line_end];
 
         // Reject bare CR inside line per RFC 7230 §3.5
         if size_slice.contains(&b'\r') {
-            return (None, 0, false, Some("Invalid bare CR in chunk size line".to_string()));
+            return (
+                None,
+                0,
+                false,
+                Some("Invalid bare CR in chunk size line".to_string()),
+            );
         }
 
         let size_str = match std::str::from_utf8(size_slice) {
             Ok(s) => s.trim(),
-            Err(_) => return (None, 0, false, Some("Invalid UTF-8 in chunk size".to_string())),
+            Err(_) => {
+                return (
+                    None,
+                    0,
+                    false,
+                    Some("Invalid UTF-8 in chunk size".to_string()),
+                )
+            }
         };
 
         // Separate chunk size from optional chunk extensions (;ext_name=ext_value)
@@ -94,39 +106,90 @@ pub fn decode_chunked_body_with_limits(
 
         // RFC 7230 §4.1: Chunk size must be unsigned hex digits without sign or 0x prefix
         if hex_str.starts_with('+') || hex_str.starts_with('-') {
-            return (None, 0, false, Some(format!("Invalid signed chunk size hex: {}", hex_str)));
+            return (
+                None,
+                0,
+                false,
+                Some(format!("Invalid signed chunk size hex: {}", hex_str)),
+            );
         }
         if hex_str.to_ascii_lowercase().starts_with("0x") {
-            return (None, 0, false, Some(format!("Invalid 0x prefix in chunk size hex: {}", hex_str)));
+            return (
+                None,
+                0,
+                false,
+                Some(format!("Invalid 0x prefix in chunk size hex: {}", hex_str)),
+            );
         }
         if hex_str.chars().any(|c| !c.is_ascii_hexdigit()) {
-            return (None, 0, false, Some(format!("Invalid non-hex character in chunk size: {}", hex_str)));
+            return (
+                None,
+                0,
+                false,
+                Some(format!(
+                    "Invalid non-hex character in chunk size: {}",
+                    hex_str
+                )),
+            );
         }
 
         // Validate chunk extensions if present
         if let Some(ext) = extension {
             if ext.len() > limits.max_line_length {
-                return (None, 0, false, Some("Chunk extension exceeds maximum allowed line length".to_string()));
+                return (
+                    None,
+                    0,
+                    false,
+                    Some("Chunk extension exceeds maximum allowed line length".to_string()),
+                );
             }
             // Disallow unescaped ASCII control characters
             if ext.chars().any(|c| (c as u32) < 0x20 && c != '\t') {
-                return (None, 0, false, Some("Invalid control character in chunk extension".to_string()));
+                return (
+                    None,
+                    0,
+                    false,
+                    Some("Invalid control character in chunk extension".to_string()),
+                );
             }
         }
 
         let chunk_size = match usize::from_str_radix(hex_str, 16) {
             Ok(size) => size,
-            Err(_) => return (None, 0, false, Some(format!("Failed to parse chunk size hex: {}", hex_str))),
+            Err(_) => {
+                return (
+                    None,
+                    0,
+                    false,
+                    Some(format!("Failed to parse chunk size hex: {}", hex_str)),
+                )
+            }
         };
 
         // Enforce maximum chunk size
         if chunk_size > limits.max_chunk_size {
-            return (None, 0, false, Some(format!("Chunk size {} exceeds limit {}", chunk_size, limits.max_chunk_size)));
+            return (
+                None,
+                0,
+                false,
+                Some(format!(
+                    "Chunk size {} exceeds limit {}",
+                    chunk_size, limits.max_chunk_size
+                )),
+            );
         }
 
         // Enforce maximum accumulated body size
         if body_chunks.len().saturating_add(chunk_size) > limits.max_body_size {
-            return (None, 0, false, Some(format!("Accumulated chunked body exceeds limit {}", limits.max_body_size)));
+            return (
+                None,
+                0,
+                false,
+                Some(format!(
+                    "Accumulated chunked body exceeds limit {}",
+                    limits.max_body_size
+                )),
+            );
         }
 
         offset += line_end + delim_len;
@@ -165,11 +228,21 @@ pub fn decode_chunked_body_with_limits(
         } else if payload.len() >= offset + 1 && payload[offset] == b'\n' {
             offset += 1;
         } else if payload.len() >= offset + 1 && payload[offset] == b'\r' {
-            return (None, 0, false, Some("Invalid bare CR following chunk body".to_string()));
+            return (
+                None,
+                0,
+                false,
+                Some("Invalid bare CR following chunk body".to_string()),
+            );
         } else if payload.len() < offset + 1 {
             return (None, 0, false, None); // Incomplete chunk terminator
         } else {
-            return (None, 0, false, Some("Missing CRLF chunk delimiter after chunk data".to_string()));
+            return (
+                None,
+                0,
+                false,
+                Some("Missing CRLF chunk delimiter after chunk data".to_string()),
+            );
         }
     }
 
@@ -194,7 +267,9 @@ pub fn parse_form_urlencoded(body: &str) -> serde_json::Value {
         } else {
             map.insert(
                 key,
-                serde_json::Value::Array(values.into_iter().map(serde_json::Value::String).collect()),
+                serde_json::Value::Array(
+                    values.into_iter().map(serde_json::Value::String).collect(),
+                ),
             );
         }
     }
@@ -382,7 +457,6 @@ pub fn parse_uri_query(uri: &str) -> (String, HashMap<String, Vec<String>>) {
     }
 }
 
-
 /// Parse a single HTTP/1.x request from a raw byte buffer using default limits.
 pub fn parse_http_request(
     data: &[u8],
@@ -392,7 +466,15 @@ pub fn parse_http_request(
     dst_ip: &str,
     dst_port: u16,
 ) -> RequestParseResult {
-    parse_http_request_with_limits(data, ts, src_ip, src_port, dst_ip, dst_port, &ParserLimits::default())
+    parse_http_request_with_limits(
+        data,
+        ts,
+        src_ip,
+        src_port,
+        dst_ip,
+        dst_port,
+        &ParserLimits::default(),
+    )
 }
 
 /// Parse a single HTTP/1.x request with configurable limits.
@@ -422,7 +504,10 @@ pub fn parse_http_request_with_limits(
                     request: None,
                     bytes_consumed: b_start,
                     is_complete: false,
-                    error: Some(format!("Header section size {} exceeds maximum allowed limit {}", h_end, limits.max_header_size)),
+                    error: Some(format!(
+                        "Header section size {} exceeds maximum allowed limit {}",
+                        h_end, limits.max_header_size
+                    )),
                 };
             }
             (h_end, b_start)
@@ -434,7 +519,9 @@ pub fn parse_http_request_with_limits(
                     request: None,
                     bytes_consumed: data.len(),
                     is_complete: false,
-                    error: Some("Header size exceeds maximum allowed limit without delimiter".to_string()),
+                    error: Some(
+                        "Header size exceeds maximum allowed limit without delimiter".to_string(),
+                    ),
                 };
             }
 
@@ -478,7 +565,10 @@ pub fn parse_http_request_with_limits(
 
     // 2. Extract and parse header lines
     let headers_raw = String::from_utf8_lossy(&data[..header_end]);
-    let lines: Vec<&str> = headers_raw.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+    let lines: Vec<&str> = headers_raw
+        .split('\n')
+        .map(|l| l.trim_end_matches('\r'))
+        .collect();
 
     if lines.is_empty() || lines[0].trim().is_empty() {
         return RequestParseResult {
@@ -513,7 +603,11 @@ pub fn parse_http_request_with_limits(
     let tokens: Vec<&str> = request_line.split_whitespace().collect();
 
     let (method, path, http_version) = match tokens.len() {
-        2 => (tokens[0].to_uppercase(), tokens[1].to_string(), "HTTP/1.1".to_string()),
+        2 => (
+            tokens[0].to_uppercase(),
+            tokens[1].to_string(),
+            "HTTP/1.1".to_string(),
+        ),
         n if n >= 3 => {
             let m = tokens[0].to_uppercase();
             let v = tokens[tokens.len() - 1].to_string();
@@ -544,7 +638,10 @@ pub fn parse_http_request_with_limits(
             request: None,
             bytes_consumed: first_line_consumed,
             is_complete: false,
-            error: Some(format!("Invalid HTTP version in request line: {}", http_version)),
+            error: Some(format!(
+                "Invalid HTTP version in request line: {}",
+                http_version
+            )),
         };
     }
 
@@ -585,7 +682,10 @@ pub fn parse_http_request_with_limits(
                 request: None,
                 bytes_consumed: body_start,
                 is_complete: false,
-                error: Some(format!("Header count exceeds maximum allowed limit {}", limits.max_headers_count)),
+                error: Some(format!(
+                    "Header count exceeds maximum allowed limit {}",
+                    limits.max_headers_count
+                )),
             };
         }
 
@@ -620,7 +720,8 @@ pub fn parse_http_request_with_limits(
                         error: Some(format!("Invalid non-numeric Content-Length: {}", h_val)),
                     };
                 }
-            } else if lower_name == "transfer-encoding" && h_val.to_lowercase().contains("chunked") {
+            } else if lower_name == "transfer-encoding" && h_val.to_lowercase().contains("chunked")
+            {
                 is_chunked = true;
             }
 
@@ -644,7 +745,8 @@ pub fn parse_http_request_with_limits(
     // 5. Determine Body Boundaries and Transfer Encoding
     let available_body = &data[body_start..];
     let (raw_body_bytes, total_consumed) = if is_chunked {
-        let (chunk_body, wire_consumed, complete, chunk_err) = decode_chunked_body_with_limits(available_body, limits);
+        let (chunk_body, wire_consumed, complete, chunk_err) =
+            decode_chunked_body_with_limits(available_body, limits);
         if let Some(err) = chunk_err {
             return RequestParseResult {
                 request: None,
@@ -668,7 +770,10 @@ pub fn parse_http_request_with_limits(
                 request: None,
                 bytes_consumed: body_start,
                 is_complete: false,
-                error: Some(format!("Content-Length {} exceeds maximum allowed body limit {}", cl, limits.max_body_size)),
+                error: Some(format!(
+                    "Content-Length {} exceeds maximum allowed body limit {}",
+                    cl, limits.max_body_size
+                )),
             };
         }
         if available_body.len() < cl {
@@ -698,7 +803,11 @@ pub fn parse_http_request_with_limits(
         http_version,
         headers,
         body: decoded_body,
-        raw_body: if raw_body_bytes.is_empty() { None } else { Some(raw_body_bytes) },
+        raw_body: if raw_body_bytes.is_empty() {
+            None
+        } else {
+            Some(raw_body_bytes)
+        },
         ts,
         src_ip: src_ip.to_string(),
         src_port,
@@ -723,7 +832,15 @@ pub fn parse_all_requests(
     dst_ip: &str,
     dst_port: u16,
 ) -> Vec<ParsedHTTPRequest> {
-    parse_all_requests_with_limits(data, ts, src_ip, src_port, dst_ip, dst_port, &ParserLimits::default())
+    parse_all_requests_with_limits(
+        data,
+        ts,
+        src_ip,
+        src_port,
+        dst_ip,
+        dst_port,
+        &ParserLimits::default(),
+    )
 }
 
 /// Parse all pipelined or consecutive requests present in a buffer with limits.
@@ -741,7 +858,9 @@ pub fn parse_all_requests_with_limits(
 
     while offset < data.len() {
         let remaining = &data[offset..];
-        let res = parse_http_request_with_limits(remaining, ts, src_ip, src_port, dst_ip, dst_port, limits);
+        let res = parse_http_request_with_limits(
+            remaining, ts, src_ip, src_port, dst_ip, dst_port, limits,
+        );
         if !res.is_complete || res.request.is_none() || res.bytes_consumed == 0 {
             break;
         }

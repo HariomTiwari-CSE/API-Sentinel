@@ -3,10 +3,10 @@
 //! Converted to Rust for high-performance zero-overhead packet processing and
 //! seamless interoperability with the kernel eBPF / Rust ingestion agent.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// Direction of traffic relative to the monitored service.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,7 +63,12 @@ fn default_protocol() -> String {
 }
 
 impl ConnectionKey {
-    pub fn new(src_ip: impl Into<String>, src_port: u16, dst_ip: impl Into<String>, dst_port: u16) -> Self {
+    pub fn new(
+        src_ip: impl Into<String>,
+        src_port: u16,
+        dst_ip: impl Into<String>,
+        dst_port: u16,
+    ) -> Self {
         Self {
             src_ip: src_ip.into(),
             src_port,
@@ -75,12 +80,18 @@ impl ConnectionKey {
 
     /// Normalized forward connection identifier (e.g. "10.0.0.5:45000->10.0.0.1:8080").
     pub fn connection_id(&self) -> String {
-        format!("{}:{}->{}:{}", self.src_ip, self.src_port, self.dst_ip, self.dst_port)
+        format!(
+            "{}:{}->{}:{}",
+            self.src_ip, self.src_port, self.dst_ip, self.dst_port
+        )
     }
 
     /// Reverse connection identifier for pairing the return traffic stream.
     pub fn reverse_id(&self) -> String {
-        format!("{}:{}->{}:{}", self.dst_ip, self.dst_port, self.src_ip, self.src_port)
+        format!(
+            "{}:{}->{}:{}",
+            self.dst_ip, self.dst_port, self.src_ip, self.src_port
+        )
     }
 
     /// Canonical bidirectional identifier invariant to orientation.
@@ -88,9 +99,15 @@ impl ConnectionKey {
         let endpoint_a = (&self.src_ip, self.src_port);
         let endpoint_b = (&self.dst_ip, self.dst_port);
         if endpoint_a <= endpoint_b {
-            format!("{}:{}<->{}:{}", self.src_ip, self.src_port, self.dst_ip, self.dst_port)
+            format!(
+                "{}:{}<->{}:{}",
+                self.src_ip, self.src_port, self.dst_ip, self.dst_port
+            )
         } else {
-            format!("{}:{}<->{}:{}", self.dst_ip, self.dst_port, self.src_ip, self.src_port)
+            format!(
+                "{}:{}<->{}:{}",
+                self.dst_ip, self.dst_port, self.src_ip, self.src_port
+            )
         }
     }
 }
@@ -106,7 +123,7 @@ pub struct RawFragment {
 }
 
 mod serde_bytes_or_vec {
-    use serde::{Deserializer, Serializer, Deserialize};
+    use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -179,7 +196,9 @@ impl ParsedHTTPRequest {
 
     /// Retrieve the first query parameter value for a given key.
     pub fn get_query_param(&self, key: &str) -> Option<&str> {
-        self.query_params.get(key).and_then(|v| v.first().map(|s| s.as_str()))
+        self.query_params
+            .get(key)
+            .and_then(|v| v.first().map(|s| s.as_str()))
     }
 
     /// Retrieve all query parameter values for a given key.
@@ -306,11 +325,11 @@ pub struct ParserLimits {
 impl Default for ParserLimits {
     fn default() -> Self {
         Self {
-            max_header_size: 64 * 1024,        // 64 KB
-            max_body_size: 10 * 1024 * 1024,   // 10 MB
-            max_chunk_size: 10 * 1024 * 1024,  // 10 MB
-            max_headers_count: 100,            // 100 headers
-            max_line_length: 8192,             // 8 KB
+            max_header_size: 64 * 1024,       // 64 KB
+            max_body_size: 10 * 1024 * 1024,  // 10 MB
+            max_chunk_size: 10 * 1024 * 1024, // 10 MB
+            max_headers_count: 100,           // 100 headers
+            max_line_length: 8192,            // 8 KB
             max_pending_requests: default_max_pending_requests(),
         }
     }
@@ -351,5 +370,3 @@ impl ParserLimits {
         self
     }
 }
-
-

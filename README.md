@@ -148,7 +148,8 @@ api-sentinel/
 │   ├── tests/
 │   │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
 │   │   ├── traffic_and_security_tests.rs # Synthetic traffic & security tests (Day 6)
-│   │   └── body_parsing_tests.rs         # Advanced JSON & form body tests (Day 7)
+│   │   ├── body_parsing_tests.rs         # Advanced JSON & form body tests (Day 7)
+│   │   └── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
 │   └── README.md               # Detailed parser module notes
 ├── .gitignore                  # Keeps temporary build files out of Git
 └── README.md                   # This overview guide
@@ -184,6 +185,7 @@ All tests pass cleanly:
 * Multiple pipelined requests and fragmented packet reassembly in a single stream
 * Security payload preservation (SQLi, Path Traversal, BOLA/BFLA, and CL-CL smuggling defense)
 * ParserLimits enforcement (max body size, max header size, max line length)
+* End-to-End integration contract review (`Detector/model.py` compatibility, binary raw body fidelity, 50-stream concurrency stress, and memory sweep)
 
 ---
 
@@ -197,7 +199,8 @@ Week 1: Getting the Basics Working
 ├── [x] Day 4: Edge case hardening (malformed chunks, bare CRs, timeout sweep, ParserLimits).
 ├── [x] Day 5: Query parameter parsing (percent-decoding, '+' handling, repeated keys, malformed queries).
 ├── [x] Day 6: Synthetic traffic tests, security payloads, bug fixes, and sustained perf checks.
-└── [x] Day 7: Advanced body parsing (JSON primitives, form-urlencoded, raw preservation, ParserLimits).
+├── [x] Day 7: Advanced body parsing (JSON primitives, form-urlencoded, raw preservation, ParserLimits).
+└── [x] Day 8: End-to-end integration contract review (downstream compatibility, concurrency stress & memory safety).
 
 Week 2: Detecting Attacks & Mid Review
 ├── Automatically map all discovered API endpoints.
