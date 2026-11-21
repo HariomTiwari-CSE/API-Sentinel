@@ -96,3 +96,40 @@ class BolaDetector:
             severity, reason = "low", "unseen_object_accessed"
         else:
             return []
+        
+        return [
+            Finding(
+                type="BOLA",
+                owasp="API1",
+                user=rec.user,
+                src_ip=rec.src_ip,
+                endpoint=f"{rec.method} {info.template}",
+                severity=severity,
+                action="alert",
+                reason=reason,
+                ts=rec.ts,
+                evidence={
+                    "resource": resource,
+                    "object_id": oid,
+                    "status": rec.status,
+                    "owner_count": len(owners),
+                    "distinct_ids": distinct,
+                    "sequential_run": run,
+                    "failures": failures,
+                    "enumeration": enumeration,
+                },
+            )
+        ]
+
+    @staticmethod
+    def _stats(queue) -> tuple[int, int, int]:
+        ids = {oid for _, oid, _ in queue}
+        failures = sum(1 for _, _, status in queue if status in FAIL_STATUSES)
+        numbers = sorted({int(i) for i in ids if i.isdigit()})
+        run = best = 0
+        previous = None
+        for n in numbers:
+            run = run + 1 if previous is not None and n == previous + 1 else 1
+            best = max(best, run)
+            previous = n
+        return len(ids), best, failures
