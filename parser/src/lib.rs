@@ -11,7 +11,10 @@ pub mod reassembler;
 pub mod request;
 pub mod response;
 
-pub use auth::{decode_base64_url, decode_jwt_payload, extract_identity_and_role};
+pub use auth::{
+    decode_base64_url, decode_jwt_payload, extract_identity_and_role, DEFAULT_ANONYMOUS_USER,
+    DEFAULT_USER_ROLE,
+};
 pub use base::HttpParser;
 pub use models::{
     ConnectionKey, ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record,

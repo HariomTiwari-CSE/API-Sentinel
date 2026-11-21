@@ -41,7 +41,8 @@ parser/
 │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
 │   ├── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
 │   ├── body_parsing_tests.rs         # Advanced JSON, form-urlencoded & body limits tests (Day 7)
-│   └── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
+│   ├── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
+│   └── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
 └── README.md                         # This documentation
 ```
 
