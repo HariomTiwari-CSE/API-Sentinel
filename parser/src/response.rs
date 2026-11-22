@@ -156,8 +156,11 @@ pub fn parse_http_response_with_limits(
         };
     }
 
-    let http_version = tokens[0].to_string();
-    if !http_version.to_uppercase().starts_with("HTTP/") {
+    let v_upper = http_version.to_uppercase();
+    if !v_upper.starts_with("HTTP/")
+        || v_upper.len() < 6
+        || !v_upper[5..].chars().next().map_or(false, |c| c.is_ascii_digit())
+    {
         return ResponseParseResult {
             response: None,
             bytes_consumed: first_line_consumed,
@@ -231,10 +234,44 @@ pub fn parse_http_response_with_limits(
             };
         }
 
-        if let Some((name, val)) = trimmed.split_once(':') {
-            let h_name = name.trim().to_string();
-            let h_val = val.trim().to_string();
-            let lower_name = h_name.to_lowercase();
+        let (name, val) = match trimmed.split_once(':') {
+            Some(pair) => pair,
+            None => {
+                return ResponseParseResult {
+                    response: None,
+                    bytes_consumed: body_start,
+                    is_complete: false,
+                    error: Some(format!(
+                        "Malformed response header line missing colon delimiter: {}",
+                        trimmed
+                    )),
+                };
+            }
+        };
+
+        if name.ends_with(' ') || name.ends_with('\t') {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some(format!(
+                    "Whitespace disallowed between header name and colon: '{}'",
+                    name
+                )),
+            };
+        }
+
+        let h_name = name.trim().to_string();
+        if h_name.is_empty() {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: body_start,
+                is_complete: false,
+                error: Some("Empty header name before colon delimiter".to_string()),
+            };
+        }
+        let h_val = val.trim().to_string();
+        let lower_name = h_name.to_lowercase();
 
             if lower_name == "content-type" {
                 content_type = h_val.clone();

@@ -150,7 +150,8 @@ api-sentinel/
 │   │   ├── traffic_and_security_tests.rs # Synthetic traffic & security tests (Day 6)
 │   │   ├── body_parsing_tests.rs         # Advanced JSON & form body tests (Day 7)
 │   │   ├── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
-│   │   └── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
+│   │   ├── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
+│   │   └── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
 │   └── README.md               # Detailed parser module notes
 ├── .gitignore                  # Keeps temporary build files out of Git
 └── README.md                   # This overview guide
@@ -188,6 +189,7 @@ All tests pass cleanly:
 * ParserLimits enforcement (max body size, max header size, max line length)
 * End-to-End integration contract review (`Detector/model.py` compatibility, binary raw body fidelity, 50-stream concurrency stress, and memory sweep)
 * Hardened authentication & identity extraction (malformed JWT resilience, string/numeric `sub`, header casing/whitespace, deterministic Tier 1-4 precedence, and zero secret leakage)
+* HTTP parsing robustness & edge-case hardening (malformed request/status lines, smuggling defenses, whitespace before colon rejection, framing conflict resolution, fuzz resilience, and byte-level stream fragmentation)
 
 ---
 
@@ -206,6 +208,7 @@ Week 1: Getting the Basics Working
 
 Week 2: Detecting Attacks & Mid Review
 ├── [x] Day 9: Harden authentication & caller identity extraction (JWT & API-key resilience, casing, whitespace, precedence & zero leaks).
+├── [x] Day 10: HTTP parsing robustness & edge-case hardening (protocol safety, smuggling defense, framing conflict & stream recovery).
 ├── Automatically map all discovered API endpoints.
 ├── Spot shadow APIs missing from the OpenAPI documentation.
 ├── Track object ownership and catch BOLA attacks.
