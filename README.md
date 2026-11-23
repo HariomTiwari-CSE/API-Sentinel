@@ -151,7 +151,11 @@ api-sentinel/
 │   │   ├── body_parsing_tests.rs         # Advanced JSON & form body tests (Day 7)
 │   │   ├── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
 │   │   ├── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
-│   │   └── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
+│   │   ├── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
+│   │   └── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
+│   ├── benches/
+│   │   ├── parser_benchmarks.rs          # Reproducible Rust benchmarks (GET, POST JSON, Chunked, Pipelined, 50-conn)
+│   │   └── bench_runner.py               # Empirical benchmark measurement runner
 │   └── README.md               # Detailed parser module notes
 ├── .gitignore                  # Keeps temporary build files out of Git
 └── README.md                   # This overview guide
@@ -190,6 +194,7 @@ All tests pass cleanly:
 * End-to-End integration contract review (`Detector/model.py` compatibility, binary raw body fidelity, 50-stream concurrency stress, and memory sweep)
 * Hardened authentication & identity extraction (malformed JWT resilience, string/numeric `sub`, header casing/whitespace, deterministic Tier 1-4 precedence, and zero secret leakage)
 * HTTP parsing robustness & edge-case hardening (malformed request/status lines, smuggling defenses, whitespace before colon rejection, framing conflict resolution, fuzz resilience, and byte-level stream fragmentation)
+* Parser performance & resource efficiency (zero-allocation line/token parsing, pre-allocated hash maps, cursor-based buffer draining, and 50-connection throughput benchmarks)
 
 ---
 
@@ -209,6 +214,7 @@ Week 1: Getting the Basics Working
 Week 2: Detecting Attacks & Mid Review
 ├── [x] Day 9: Harden authentication & caller identity extraction (JWT & API-key resilience, casing, whitespace, precedence & zero leaks).
 ├── [x] Day 10: HTTP parsing robustness & edge-case hardening (protocol safety, smuggling defense, framing conflict & stream recovery).
+├── [x] Day 11: Parser performance & resource efficiency (benchmarks, zero-allocation line/token parsing, cursor draining & memory bounds).
 ├── Automatically map all discovered API endpoints.
 ├── Spot shadow APIs missing from the OpenAPI documentation.
 ├── Track object ownership and catch BOLA attacks.

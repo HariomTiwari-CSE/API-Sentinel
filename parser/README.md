@@ -37,13 +37,17 @@ parser/
 │   ├── auth.rs                 # Zero-dependency JWT and API-key identity reader
 │   ├── base.rs                 # HttpParser trait interface
 │   └── reassembler.rs          # TCP stream reassembly, request-response matching, latency
+├── benches/
+│   ├── parser_benchmarks.rs          # Reproducible Rust benchmarks (GET, POST JSON, Chunked, Pipelined, 50-conn)
+│   └── bench_runner.py               # Empirical benchmark measurement runner
 ├── tests/
 │   ├── foundation_tests.rs           # Core unit tests (Days 1–5)
 │   ├── traffic_and_security_tests.rs # Synthetic traffic, security payloads, regressions & perf (Day 6)
 │   ├── body_parsing_tests.rs         # Advanced JSON, form-urlencoded & body limits tests (Day 7)
 │   ├── integration_contract_tests.rs # Downstream Detector & Discovery contract review tests (Day 8)
 │   ├── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
-│   └── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
+│   ├── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
+│   └── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
 └── README.md                         # This documentation
 ```
 

@@ -137,27 +137,15 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
         );
     }
 
-    // Normalize keys to lowercase; if duplicate casings exist, prefer non-empty values
-    let mut lower_headers: HashMap<String, String> = HashMap::with_capacity(headers.len());
-    for (k, v) in headers {
-        let lk = k.to_lowercase();
-        let trimmed = v.trim();
-        match lower_headers.get(&lk) {
-            None => {
-                lower_headers.insert(lk, trimmed.to_string());
-            }
-            Some(existing) if existing.is_empty() && !trimmed.is_empty() => {
-                lower_headers.insert(lk, trimmed.to_string());
-            }
-            _ => {}
-        }
-    }
-
+    // Zero-allocation case-insensitive header lookup directly against borrowed headers map
     let get_first_header = |names: &[&str]| -> Option<&str> {
-        for name in names {
-            if let Some(val) = lower_headers.get(*name) {
-                if !val.is_empty() {
-                    return Some(val.as_str());
+        for target in names {
+            for (k, v) in headers {
+                if k.eq_ignore_ascii_case(target) {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed);
+                    }
                 }
             }
         }
@@ -165,8 +153,7 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
     };
 
     // 1. Tier 1: Check Authorization Bearer JWT
-    if let Some(auth_val) = lower_headers.get("authorization") {
-        let auth_str = auth_val.trim();
+    if let Some(auth_str) = get_first_header(&["authorization"]) {
         let is_bearer = if auth_str.len() >= 6 && auth_str[..6].eq_ignore_ascii_case("bearer") {
             if auth_str.len() == 6 {
                 false

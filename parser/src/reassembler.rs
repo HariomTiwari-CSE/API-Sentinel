@@ -214,7 +214,7 @@ impl HttpParser for StreamReassembler {
         let state = self
             .connections
             .entry(canon_id.clone())
-            .or_insert_with(|| ConnectionState::new(&canon_id, fragment.ts));
+            .or_insert_with(|| ConnectionState::new(canon_id, fragment.ts));
 
         let mut finalized_records = Vec::new();
 
@@ -222,14 +222,15 @@ impl HttpParser for StreamReassembler {
             TrafficDirection::Ingress => {
                 state.append_ingress(&fragment.payload, fragment.ts);
 
-                // Drain complete requests from ingress buffer
+                // Drain complete requests from ingress buffer using cursor to avoid repeated memmove shifts
+                let mut cursor = 0;
                 loop {
-                    if state.ingress_buffer.is_empty() {
+                    if cursor >= state.ingress_buffer.len() {
                         break;
                     }
 
                     let res = parse_http_request_with_limits(
-                        &state.ingress_buffer,
+                        &state.ingress_buffer[cursor..],
                         fragment.ts,
                         &src_ip,
                         src_port,
@@ -248,24 +249,28 @@ impl HttpParser for StreamReassembler {
                             state.pending_requests.remove(0);
                         }
                         state.pending_requests.push(req);
-                        state.ingress_buffer.drain(..consumed);
+                        cursor += consumed;
                     } else if res.error.is_some() {
                         // Malformed request line or unrecoverable error:
                         // Discard the corrupted line and continue scanning for valid pipelined requests
+                        let remaining_len = state.ingress_buffer.len() - cursor;
                         let drain_len = if res.bytes_consumed > 0 {
-                            res.bytes_consumed.min(state.ingress_buffer.len())
+                            res.bytes_consumed.min(remaining_len)
                         } else {
-                            find_next_line_boundary(&state.ingress_buffer)
+                            find_next_line_boundary(&state.ingress_buffer[cursor..])
                         };
                         if drain_len == 0 {
                             break;
                         }
-                        state.ingress_buffer.drain(..drain_len);
-                        continue;
+                        cursor += drain_len;
                     } else {
                         // Incomplete, waiting for more data
                         break;
                     }
+                }
+
+                if cursor > 0 {
+                    state.ingress_buffer.drain(..cursor);
                 }
 
                 // Release excess allocated memory after large payloads drain
@@ -278,19 +283,23 @@ impl HttpParser for StreamReassembler {
             TrafficDirection::Egress => {
                 state.append_egress(&fragment.payload, fragment.ts);
 
-                // Drain complete responses from egress buffer
+                // Drain complete responses from egress buffer using cursor to avoid repeated memmove shifts
+                let mut cursor = 0;
                 loop {
-                    if state.egress_buffer.is_empty() {
+                    if cursor >= state.egress_buffer.len() {
                         break;
                     }
 
-                    let res =
-                        parse_http_response_with_limits(&state.egress_buffer, fragment.ts, &limits);
+                    let res = parse_http_response_with_limits(
+                        &state.egress_buffer[cursor..],
+                        fragment.ts,
+                        &limits,
+                    );
 
                     if res.is_complete && res.response.is_some() && res.bytes_consumed > 0 {
                         let resp = res.response.unwrap();
                         let consumed = res.bytes_consumed;
-                        state.egress_buffer.drain(..consumed);
+                        cursor += consumed;
 
                         // Match with pending request (FIFO)
                         if !state.pending_requests.is_empty() {
@@ -339,19 +348,23 @@ impl HttpParser for StreamReassembler {
                             finalized_records.push(record);
                         }
                     } else if res.error.is_some() {
+                        let remaining_len = state.egress_buffer.len() - cursor;
                         let drain_len = if res.bytes_consumed > 0 {
-                            res.bytes_consumed.min(state.egress_buffer.len())
+                            res.bytes_consumed.min(remaining_len)
                         } else {
-                            find_next_line_boundary(&state.egress_buffer)
+                            find_next_line_boundary(&state.egress_buffer[cursor..])
                         };
                         if drain_len == 0 {
                             break;
                         }
-                        state.egress_buffer.drain(..drain_len);
-                        continue;
+                        cursor += drain_len;
                     } else {
                         break;
                     }
+                }
+
+                if cursor > 0 {
+                    state.egress_buffer.drain(..cursor);
                 }
 
                 // Release excess allocated memory after large payloads drain

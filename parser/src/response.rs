@@ -108,24 +108,26 @@ pub fn parse_http_response_with_limits(
         .or_else(|| data.iter().position(|&b| b == b'\n').map(|p| p + 1))
         .unwrap_or(body_start);
 
-    // 2. Extract and parse header lines
+    // 2. Extract and parse header lines lazily without heap vector allocation
     let headers_raw = String::from_utf8_lossy(&data[..header_end]);
-    let lines: Vec<&str> = headers_raw
+    let mut line_iter = headers_raw
         .split('\n')
-        .map(|l| l.trim_end_matches('\r'))
-        .collect();
+        .map(|l| l.trim_end_matches('\r'));
 
-    if lines.is_empty() || lines[0].trim().is_empty() {
-        return ResponseParseResult {
-            response: None,
-            bytes_consumed: first_line_consumed,
-            is_complete: false,
-            error: Some("Empty response line".to_string()),
-        };
-    }
+    let status_line_raw = match line_iter.next() {
+        Some(l) if !l.trim().is_empty() => l,
+        _ => {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: first_line_consumed,
+                is_complete: false,
+                error: Some("Empty response line".to_string()),
+            };
+        }
+    };
 
     // Reject bare CR in status line
-    if lines[0].contains('\r') {
+    if status_line_raw.contains('\r') {
         return ResponseParseResult {
             response: None,
             bytes_consumed: body_start,
@@ -135,7 +137,7 @@ pub fn parse_http_response_with_limits(
     }
 
     // 3. Parse Status-Line: HTTP_VERSION STATUS_CODE [REASON_PHRASE]
-    let status_line = lines[0].trim();
+    let status_line = status_line_raw.trim();
     if status_line.len() > limits.max_line_length {
         return ResponseParseResult {
             response: None,
@@ -145,16 +147,21 @@ pub fn parse_http_response_with_limits(
         };
     }
 
-    let tokens: Vec<&str> = status_line.split_whitespace().collect();
+    let mut token_iter = status_line.split_whitespace();
+    let t_ver = token_iter.next();
+    let t_code = token_iter.next();
 
-    if tokens.len() < 2 {
-        return ResponseParseResult {
-            response: None,
-            bytes_consumed: first_line_consumed,
-            is_complete: false,
-            error: Some(format!("Malformed status line tokens: {}", status_line)),
-        };
-    }
+    let (http_version, status_code_raw) = match (t_ver, t_code) {
+        (Some(v), Some(c)) => (v, c),
+        _ => {
+            return ResponseParseResult {
+                response: None,
+                bytes_consumed: first_line_consumed,
+                is_complete: false,
+                error: Some(format!("Malformed status line tokens: {}", status_line)),
+            };
+        }
+    };
 
     let v_upper = http_version.to_uppercase();
     if !v_upper.starts_with("HTTP/")
@@ -167,37 +174,38 @@ pub fn parse_http_response_with_limits(
             is_complete: false,
             error: Some(format!(
                 "Invalid HTTP version in status line: {}",
-                tokens[0]
+                http_version
             )),
         };
     }
 
-    let status_code: u16 = match tokens[1].parse::<u16>() {
+    let status_code: u16 = match status_code_raw.parse::<u16>() {
         Ok(code) if (100..=599).contains(&code) => code,
         _ => {
             return ResponseParseResult {
                 response: None,
                 bytes_consumed: first_line_consumed,
                 is_complete: false,
-                error: Some(format!("Invalid status code in status line: {}", tokens[1])),
+                error: Some(format!("Invalid status code in status line: {}", status_code_raw)),
             };
         }
     };
 
-    let status_text = if tokens.len() >= 3 {
-        tokens[2..].join(" ")
+    let rest_phrase: Vec<&str> = token_iter.collect();
+    let status_text = if !rest_phrase.is_empty() {
+        rest_phrase.join(" ")
     } else {
         default_status_text(status_code).to_string()
     };
 
-    // 4. Parse Header Lines
-    let mut headers: HashMap<String, String> = HashMap::new();
+    // 4. Parse Header Lines (pre-allocated to avoid rehashing for typical header counts)
+    let mut headers: HashMap<String, String> = HashMap::with_capacity(16);
     let mut content_type = String::new();
     let mut content_length: Option<usize> = None;
     let mut is_chunked = false;
     let mut header_count = 0;
 
-    for line in &lines[1..] {
+    for line in line_iter {
         if line.contains('\r') {
             return ResponseParseResult {
                 response: None,
