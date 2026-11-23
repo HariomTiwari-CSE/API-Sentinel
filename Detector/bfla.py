@@ -25,3 +25,32 @@ class Rule:
         if self.methods is not None and method not in self.methods:
             return False
         return re.search(self.pattern, template) is not None
+DEFAULT_RULES = (
+    Rule(r"^/(?:api/)?(?:v\d+/)?admin(?:/|$)", frozenset({"admin"})),
+    Rule(r"^/(?:api/)?(?:v\d+/)?internal(?:/|$)", frozenset({"service", "admin"})),
+)
+
+
+@dataclass
+class BflaConfig:
+    rules: tuple = DEFAULT_RULES
+    privileged_roles: frozenset = frozenset({"admin"})
+    learn_privileged: bool = True
+    min_samples: int = 3
+
+
+class BflaDetector:
+    def __init__(self, config: BflaConfig | None = None):
+        self.config = config or BflaConfig()
+        self._roles_seen: dict[tuple[str, str], Counter] = defaultdict(Counter)
+
+    def learn_only(self, rec: Record) -> None:
+        if rec.ok:
+            info = parse_path(rec.path)
+            self._roles_seen[(rec.method, info.template)][rec.role] += 1
+
+    def inspect(self, rec: Record) -> list[Finding]:
+        cfg = self.config
+        info = parse_path(rec.path)
+        key = (rec.method, info.template)
+        reason = None
