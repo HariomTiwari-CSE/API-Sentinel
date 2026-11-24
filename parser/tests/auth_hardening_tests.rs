@@ -106,10 +106,7 @@ fn test_jwt_payload_non_object_primitives_rejected() {
     assert!(decode_jwt_payload(&str_jwt).is_none());
 
     // JSON Array: ["admin", "operator"]
-    let arr_jwt = format!(
-        "header.{}.sig",
-        to_base64_url(b"[\"admin\", \"operator\"]")
-    );
+    let arr_jwt = format!("header.{}.sig", to_base64_url(b"[\"admin\", \"operator\"]"));
     assert!(decode_jwt_payload(&arr_jwt).is_none());
 
     // JSON Null: null
@@ -117,10 +114,7 @@ fn test_jwt_payload_non_object_primitives_rejected() {
     assert!(decode_jwt_payload(&null_jwt).is_none());
 
     // Plain non-JSON text: "this is not json at all"
-    let text_jwt = format!(
-        "header.{}.sig",
-        to_base64_url(b"this is not json at all")
-    );
+    let text_jwt = format!("header.{}.sig", to_base64_url(b"this is not json at all"));
     assert!(decode_jwt_payload(&text_jwt).is_none());
 }
 
@@ -397,7 +391,11 @@ fn test_api_key_casing_and_header_variants() {
             "secret_prod_token_9999".to_string(),
         );
         let (u, r) = extract_identity_and_role(&h);
-        assert_eq!(u, "key_secret_p", "Failed for header casing: {}", header_name);
+        assert_eq!(
+            u, "key_secret_p",
+            "Failed for header casing: {}",
+            header_name
+        );
         assert_eq!(r, DEFAULT_USER_ROLE);
     }
 }
@@ -485,7 +483,10 @@ fn test_deterministic_precedence_tier1_jwt_over_tier2_and_tier3() {
     h.insert("X-Role".to_string(), "apikey_role".to_string());
 
     let (u, r) = extract_identity_and_role(&h);
-    assert_eq!(u, "jwt_caller", "Tier 1 JWT must take precedence for identity");
+    assert_eq!(
+        u, "jwt_caller",
+        "Tier 1 JWT must take precedence for identity"
+    );
     assert_eq!(r, "jwt_role", "Tier 1 JWT role must take precedence");
 }
 
@@ -500,8 +501,14 @@ fn test_deterministic_precedence_tier2_userid_over_tier3_apikey() {
     h.insert("X-Role".to_string(), "api_role".to_string());
 
     let (u, r) = extract_identity_and_role(&h);
-    assert_eq!(u, "direct_operator", "Tier 2 User ID must take precedence over API Key");
-    assert_eq!(r, "lead_engineer", "Tier 2 User Role must take precedence over X-Role");
+    assert_eq!(
+        u, "direct_operator",
+        "Tier 2 User ID must take precedence over API Key"
+    );
+    assert_eq!(
+        r, "lead_engineer",
+        "Tier 2 User Role must take precedence over X-Role"
+    );
 }
 
 #[test]
@@ -617,8 +624,14 @@ fn test_end_to_end_reassembler_emits_hardened_auth_records() {
     assert_eq!(records.len(), 1);
 
     let record = &records[0];
-    assert_eq!(record.user, "sec_analyst_404", "JWT sub must be emitted in Record");
-    assert_eq!(record.role, "tier3_soc", "JWT role must be emitted in Record");
+    assert_eq!(
+        record.user, "sec_analyst_404",
+        "JWT sub must be emitted in Record"
+    );
+    assert_eq!(
+        record.role, "tier3_soc",
+        "JWT role must be emitted in Record"
+    );
     assert_eq!(record.method, "GET");
     assert_eq!(record.path, "/api/v1/security/incidents");
     assert_eq!(record.status, 200);

@@ -36,11 +36,23 @@ fn test_lazy_line_and_token_parsing_functional_parity() {
     assert_eq!(req.method, "GET");
     assert_eq!(req.path, "/api/v1/users?page=2&sort=desc");
     assert_eq!(req.http_version, "HTTP/1.1");
-    assert_eq!(req.headers.get("Host").map(|s| s.as_str()), Some("api.sentinel.internal"));
-    assert_eq!(req.headers.get("User-Agent").map(|s| s.as_str()), Some("BenchClient/2.0"));
-    assert_eq!(req.headers.get("X-Custom-Trace").map(|s| s.as_str()), Some("trc_99482"));
+    assert_eq!(
+        req.headers.get("Host").map(|s| s.as_str()),
+        Some("api.sentinel.internal")
+    );
+    assert_eq!(
+        req.headers.get("User-Agent").map(|s| s.as_str()),
+        Some("BenchClient/2.0")
+    );
+    assert_eq!(
+        req.headers.get("X-Custom-Trace").map(|s| s.as_str()),
+        Some("trc_99482")
+    );
     assert_eq!(req.query_params.get("page").map(|s| s.as_str()), Some("2"));
-    assert_eq!(req.query_params.get("sort").map(|s| s.as_str()), Some("desc"));
+    assert_eq!(
+        req.query_params.get("sort").map(|s| s.as_str()),
+        Some("desc")
+    );
 }
 
 #[test]
@@ -55,7 +67,14 @@ fn test_post_json_parsing_fidelity_and_zero_corruption() {
         std::str::from_utf8(json_body).unwrap()
     );
 
-    let res = parse_http_request(raw_post.as_bytes(), 100.0, "10.0.0.5", 55443, "10.0.0.1", 8080);
+    let res = parse_http_request(
+        raw_post.as_bytes(),
+        100.0,
+        "10.0.0.5",
+        55443,
+        "10.0.0.1",
+        8080,
+    );
     assert!(res.is_complete);
     let req = res.request.unwrap();
     assert_eq!(req.method, "POST");
@@ -92,11 +111,17 @@ fn test_pipelined_traffic_cursor_drain_efficiency() {
         payload: combined_requests,
     };
     let out = reassembler.process_fragment(frag_req);
-    assert!(out.is_empty(), "All 10 requests should wait in FIFO queue for responses");
+    assert!(
+        out.is_empty(),
+        "All 10 requests should wait in FIFO queue for responses"
+    );
 
     let state = reassembler.connections.values().next().unwrap();
     assert_eq!(state.pending_requests.len(), 10);
-    assert!(state.ingress_buffer.is_empty(), "Ingress buffer must be cleanly drained");
+    assert!(
+        state.ingress_buffer.is_empty(),
+        "Ingress buffer must be cleanly drained"
+    );
 
     // Deliver 10 matching responses in one single packet
     let mut combined_responses = Vec::new();
@@ -225,19 +250,45 @@ fn test_performance_optimizations_preserve_parser_limits() {
 
     // 1. Max line length strictly enforced
     let raw_long_line = format!("GET /{} HTTP/1.1\r\nHost: ok.com\r\n\r\n", "a".repeat(80));
-    let res1 = parse_http_request_with_limits(raw_long_line.as_bytes(), 100.0, "1.1.1.1", 1, "2.2.2.2", 80, &limits);
+    let res1 = parse_http_request_with_limits(
+        raw_long_line.as_bytes(),
+        100.0,
+        "1.1.1.1",
+        1,
+        "2.2.2.2",
+        80,
+        &limits,
+    );
     assert!(!res1.is_complete);
-    assert!(res1.error.unwrap().contains("Request line exceeds maximum allowed length"));
+    assert!(res1
+        .error
+        .unwrap()
+        .contains("Request line exceeds maximum allowed length"));
 
     // 2. Max headers count strictly enforced
     let raw_many_headers = b"GET / HTTP/1.1\r\nH1: 1\r\nH2: 2\r\nH3: 3\r\nH4: 4\r\n\r\n";
-    let res2 = parse_http_request_with_limits(raw_many_headers, 100.0, "1.1.1.1", 1, "2.2.2.2", 80, &limits);
+    let res2 = parse_http_request_with_limits(
+        raw_many_headers,
+        100.0,
+        "1.1.1.1",
+        1,
+        "2.2.2.2",
+        80,
+        &limits,
+    );
     assert!(!res2.is_complete);
-    assert!(res2.error.unwrap().contains("Header count exceeds maximum allowed limit"));
+    assert!(res2
+        .error
+        .unwrap()
+        .contains("Header count exceeds maximum allowed limit"));
 
     // 3. Max body size strictly enforced
     let raw_big_body = b"POST / HTTP/1.1\r\nContent-Length: 100\r\n\r\n";
-    let res3 = parse_http_request_with_limits(raw_big_body, 100.0, "1.1.1.1", 1, "2.2.2.2", 80, &limits);
+    let res3 =
+        parse_http_request_with_limits(raw_big_body, 100.0, "1.1.1.1", 1, "2.2.2.2", 80, &limits);
     assert!(!res3.is_complete);
-    assert!(res3.error.unwrap().contains("exceeds maximum allowed body limit 20"));
+    assert!(res3
+        .error
+        .unwrap()
+        .contains("exceeds maximum allowed body limit 20"));
 }

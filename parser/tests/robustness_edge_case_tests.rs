@@ -91,7 +91,10 @@ fn test_malformed_request_line_variations() {
     let res6 = parse_http_request(raw_bare_cr, 100.0, "1.1.1.1", 1000, "2.2.2.2", 80);
     assert!(!res6.is_complete);
     assert!(res6.error.is_some());
-    assert!(res6.error.unwrap().contains("Invalid bare CR in request line"));
+    assert!(res6
+        .error
+        .unwrap()
+        .contains("Invalid bare CR in request line"));
 }
 
 #[test]
@@ -101,10 +104,7 @@ fn test_malformed_status_line_variations() {
     let res1 = parse_http_response(raw_no_code, 100.0);
     assert!(!res1.is_complete);
     assert!(res1.error.is_some());
-    assert!(res1
-        .error
-        .unwrap()
-        .contains("Malformed status line tokens"));
+    assert!(res1.error.unwrap().contains("Malformed status line tokens"));
 
     // 2. Non-numeric status code
     let raw_bad_code = b"HTTP/1.1 OK\r\nContent-Length: 0\r\n\r\n";
@@ -221,8 +221,7 @@ fn test_header_edge_cases_and_smuggling_defenses() {
         .contains("Conflicting duplicate Content-Length headers: 10 vs 20"));
 
     // 7. Identical duplicate Content-Length headers accepted (RFC 7230 §3.3.2)
-    let raw_dup_cl =
-        b"POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello";
+    let raw_dup_cl = b"POST / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello";
     let res7 = parse_http_request(raw_dup_cl, 100.0, "1.1.1.1", 1, "2.2.2.2", 80);
     assert!(res7.is_complete);
     let req7 = res7.request.unwrap();
@@ -257,16 +256,14 @@ fn test_chunked_encoding_edge_cases_and_invalid_sizes() {
 
     // 1. Truncated chunk size line
     let raw_trunc_size = b"5";
-    let (_, consumed, complete, err) =
-        decode_chunked_body_with_limits(raw_trunc_size, &limits);
+    let (_, consumed, complete, err) = decode_chunked_body_with_limits(raw_trunc_size, &limits);
     assert!(!complete);
     assert_eq!(consumed, 0);
     assert!(err.is_none());
 
     // 2. Truncated chunk data (size says 0x10 = 16 bytes, only 5 provided)
     let raw_trunc_data = b"10\r\n12345";
-    let (_, consumed2, complete2, err2) =
-        decode_chunked_body_with_limits(raw_trunc_data, &limits);
+    let (_, consumed2, complete2, err2) = decode_chunked_body_with_limits(raw_trunc_data, &limits);
     assert!(!complete2);
     assert_eq!(consumed2, 0);
     assert!(err2.is_none());
@@ -298,8 +295,7 @@ fn test_chunked_encoding_edge_cases_and_invalid_sizes() {
 
     // 6. Valid chunk extensions with parameters
     let raw_ext = b"5;token=val;sec=true\r\nhello\r\n0\r\n\r\n";
-    let (body, consumed6, complete6, err6) =
-        decode_chunked_body_with_limits(raw_ext, &limits);
+    let (body, consumed6, complete6, err6) = decode_chunked_body_with_limits(raw_ext, &limits);
     assert!(complete6);
     assert!(err6.is_none());
     assert_eq!(body, Some(b"hello".to_vec()));
@@ -320,11 +316,7 @@ fn test_special_status_codes_never_include_body() {
     assert_eq!(resp.status, 204);
     assert_eq!(resp.body, None);
     // Consumed bytes should stop exactly at headers boundary (\r\n\r\n), preserving next request
-    let headers_boundary = raw_204
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .unwrap()
-        + 4;
+    let headers_boundary = raw_204.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
     assert_eq!(res_204.bytes_consumed, headers_boundary);
 
     // 304 Not Modified MUST NOT include a message body
@@ -358,11 +350,19 @@ fn test_fuzz_garbage_data_never_panics_or_loops() {
     for (idx, payload) in garbage_payloads.iter().enumerate() {
         // Request parser safety
         let req_res = parse_http_request(payload, 100.0, "1.1.1.1", 1, "2.2.2.2", 2);
-        assert!(!req_res.is_complete || req_res.request.is_some(), "Crash on payload idx {}", idx);
+        assert!(
+            !req_res.is_complete || req_res.request.is_some(),
+            "Crash on payload idx {}",
+            idx
+        );
 
         // Response parser safety
         let resp_res = parse_http_response(payload, 100.0);
-        assert!(!resp_res.is_complete || resp_res.response.is_some(), "Crash on response payload idx {}", idx);
+        assert!(
+            !resp_res.is_complete || resp_res.response.is_some(),
+            "Crash on response payload idx {}",
+            idx
+        );
 
         // Chunk decoder safety
         let (_, _, _, _) = decode_chunked_body_with_limits(payload, &ParserLimits::default());

@@ -154,19 +154,24 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
 
     // 1. Tier 1: Check Authorization Bearer JWT
     if let Some(auth_str) = get_first_header(&["authorization"]) {
-        let is_bearer = if auth_str.len() >= 6 && auth_str[..6].eq_ignore_ascii_case("bearer") {
-            if auth_str.len() == 6 {
-                false
+        let is_bearer = if let Some(prefix) = auth_str.get(..6) {
+            if prefix.eq_ignore_ascii_case("bearer") {
+                if auth_str.len() == 6 {
+                    false
+                } else if let Some(rest) = auth_str.get(6..) {
+                    rest.starts_with(' ') || rest.starts_with('\t')
+                } else {
+                    false
+                }
             } else {
-                let rest = &auth_str[6..];
-                rest.starts_with(' ') || rest.starts_with('\t')
+                false
             }
         } else {
             false
         };
 
         if is_bearer {
-            let token = auth_str[6..].trim();
+            let token = auth_str.get(6..).unwrap_or("").trim();
             if !token.is_empty() {
                 if let Some(claims) = decode_jwt_payload(token) {
                     let user_opt = claims
@@ -192,37 +197,37 @@ pub fn extract_identity_and_role(headers: &HashMap<String, String>) -> (String, 
                             }
                         });
 
-                    let role_opt = claims
-                        .get("role")
-                        .or_else(|| claims.get("scope"))
-                        .and_then(|v| {
-                            if let Some(s) = v.as_str() {
-                                let trimmed = s.trim();
-                                if !trimmed.is_empty() {
-                                    Some(trimmed.to_string())
+                    let role_opt =
+                        claims
+                            .get("role")
+                            .or_else(|| claims.get("scope"))
+                            .and_then(|v| {
+                                if let Some(s) = v.as_str() {
+                                    let trimmed = s.trim();
+                                    if !trimmed.is_empty() {
+                                        Some(trimmed.to_string())
+                                    } else {
+                                        None
+                                    }
+                                } else if let Some(arr) = v.as_array() {
+                                    arr.iter().find_map(|item| {
+                                        item.as_str().and_then(|s| {
+                                            let trimmed = s.trim();
+                                            if !trimmed.is_empty() {
+                                                Some(trimmed.to_string())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                    })
                                 } else {
                                     None
                                 }
-                            } else if let Some(arr) = v.as_array() {
-                                arr.iter().find_map(|item| {
-                                    item.as_str().and_then(|s| {
-                                        let trimmed = s.trim();
-                                        if !trimmed.is_empty() {
-                                            Some(trimmed.to_string())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                })
-                            } else {
-                                None
-                            }
-                        });
+                            });
 
                     let role = role_opt
                         .or_else(|| {
-                            get_first_header(&["x-user-role", "x-role"])
-                                .map(|s| s.to_string())
+                            get_first_header(&["x-user-role", "x-role"]).map(|s| s.to_string())
                         })
                         .unwrap_or_else(|| DEFAULT_USER_ROLE.to_string());
 

@@ -110,9 +110,7 @@ pub fn parse_http_response_with_limits(
 
     // 2. Extract and parse header lines lazily without heap vector allocation
     let headers_raw = String::from_utf8_lossy(&data[..header_end]);
-    let mut line_iter = headers_raw
-        .split('\n')
-        .map(|l| l.trim_end_matches('\r'));
+    let mut line_iter = headers_raw.split('\n').map(|l| l.trim_end_matches('\r'));
 
     let status_line_raw = match line_iter.next() {
         Some(l) if !l.trim().is_empty() => l,
@@ -166,7 +164,10 @@ pub fn parse_http_response_with_limits(
     let v_upper = http_version.to_uppercase();
     if !v_upper.starts_with("HTTP/")
         || v_upper.len() < 6
-        || !v_upper[5..].chars().next().map_or(false, |c| c.is_ascii_digit())
+        || !v_upper[5..]
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_digit())
     {
         return ResponseParseResult {
             response: None,
@@ -186,7 +187,10 @@ pub fn parse_http_response_with_limits(
                 response: None,
                 bytes_consumed: first_line_consumed,
                 is_complete: false,
-                error: Some(format!("Invalid status code in status line: {}", status_code_raw)),
+                error: Some(format!(
+                    "Invalid status code in status line: {}",
+                    status_code_raw
+                )),
             };
         }
     };
@@ -281,50 +285,48 @@ pub fn parse_http_response_with_limits(
         let h_val = val.trim().to_string();
         let lower_name = h_name.to_lowercase();
 
-            if lower_name == "content-type" {
-                content_type = h_val.clone();
-            } else if lower_name == "content-length" {
-                if let Ok(len) = h_val.parse::<usize>() {
-                    if let Some(prev) = content_length {
-                        if prev != len {
-                            return ResponseParseResult {
-                                response: None,
-                                bytes_consumed: body_start,
-                                is_complete: false,
-                                error: Some(format!(
-                                    "Conflicting duplicate Content-Length headers: {} vs {}",
-                                    prev, len
-                                )),
-                            };
-                        }
+        if lower_name == "content-type" {
+            content_type = h_val.clone();
+        } else if lower_name == "content-length" {
+            if let Ok(len) = h_val.parse::<usize>() {
+                if let Some(prev) = content_length {
+                    if prev != len {
+                        return ResponseParseResult {
+                            response: None,
+                            bytes_consumed: body_start,
+                            is_complete: false,
+                            error: Some(format!(
+                                "Conflicting duplicate Content-Length headers: {} vs {}",
+                                prev, len
+                            )),
+                        };
                     }
-                    content_length = Some(len);
-                } else {
-                    return ResponseParseResult {
-                        response: None,
-                        bytes_consumed: body_start,
-                        is_complete: false,
-                        error: Some(format!("Invalid non-numeric Content-Length: {}", h_val)),
-                    };
                 }
-            } else if lower_name == "transfer-encoding" && h_val.to_lowercase().contains("chunked")
-            {
-                is_chunked = true;
-            }
-
-            let existing_key = headers
-                .keys()
-                .find(|k| k.eq_ignore_ascii_case(&h_name))
-                .cloned();
-
-            if let Some(key) = existing_key {
-                if let Some(existing) = headers.get_mut(&key) {
-                    existing.push_str(", ");
-                    existing.push_str(&h_val);
-                }
+                content_length = Some(len);
             } else {
-                headers.insert(h_name, h_val);
+                return ResponseParseResult {
+                    response: None,
+                    bytes_consumed: body_start,
+                    is_complete: false,
+                    error: Some(format!("Invalid non-numeric Content-Length: {}", h_val)),
+                };
             }
+        } else if lower_name == "transfer-encoding" && h_val.to_lowercase().contains("chunked") {
+            is_chunked = true;
+        }
+
+        let existing_key = headers
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&h_name))
+            .cloned();
+
+        if let Some(key) = existing_key {
+            if let Some(existing) = headers.get_mut(&key) {
+                existing.push_str(", ");
+                existing.push_str(&h_val);
+            }
+        } else {
+            headers.insert(h_name, h_val);
         }
     }
 

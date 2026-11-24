@@ -28,7 +28,8 @@ fn bench_simple_get_requests(iterations: usize) {
     let elapsed = start.elapsed();
     let per_op_ns = elapsed.as_nanos() / iterations as u128;
     let ops_per_sec = (iterations as f64) / elapsed.as_secs_f64();
-    let mb_per_sec = (raw_get.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
+    let mb_per_sec =
+        (raw_get.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
     println!(
         "Benchmark: Simple GET requests       | Iterations: {:<7} | Time/op: {:>5} ns | Rate: {:>10.0} req/s | Throughput: {:>6.2} MB/s",
@@ -52,7 +53,8 @@ fn bench_post_json_requests(iterations: usize) {
     let elapsed = start.elapsed();
     let per_op_ns = elapsed.as_nanos() / iterations as u128;
     let ops_per_sec = (iterations as f64) / elapsed.as_secs_f64();
-    let mb_per_sec = (raw_post.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
+    let mb_per_sec =
+        (raw_post.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
     println!(
         "Benchmark: POST with JSON bodies     | Iterations: {:<7} | Time/op: {:>5} ns | Rate: {:>10.0} req/s | Throughput: {:>6.2} MB/s",
@@ -77,7 +79,8 @@ fn bench_chunked_responses(iterations: usize) {
     let elapsed = start.elapsed();
     let per_op_ns = elapsed.as_nanos() / iterations as u128;
     let ops_per_sec = (iterations as f64) / elapsed.as_secs_f64();
-    let mb_per_sec = (raw_chunked.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
+    let mb_per_sec =
+        (raw_chunked.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
     println!(
         "Benchmark: Chunked responses         | Iterations: {:<7} | Time/op: {:>5} ns | Rate: {:>10.0} resp/s| Throughput: {:>6.2} MB/s",
@@ -100,7 +103,8 @@ fn bench_pipelined_traffic(iterations: usize) {
     let total_reqs = iterations * 4;
     let per_req_ns = elapsed.as_nanos() / total_reqs as u128;
     let reqs_per_sec = (total_reqs as f64) / elapsed.as_secs_f64();
-    let mb_per_sec = (pipelined.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
+    let mb_per_sec =
+        (pipelined.len() * iterations) as f64 / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
     println!(
         "Benchmark: Pipelined traffic (x4)    | Iterations: {:<7} | Time/op: {:>5} ns | Rate: {:>10.0} req/s | Throughput: {:>6.2} MB/s",

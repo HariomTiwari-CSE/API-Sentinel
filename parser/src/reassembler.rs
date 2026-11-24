@@ -193,6 +193,11 @@ impl StreamReassembler {
         self.swept_connections_count += evicted;
         evicted
     }
+
+    /// Alias for `sweep_idle_connections` to clean idle connections exceeding timeout.
+    pub fn clean_idle_connections(&mut self, current_ts: f64) -> usize {
+        self.sweep_idle_connections(current_ts)
+    }
 }
 
 impl HttpParser for StreamReassembler {
