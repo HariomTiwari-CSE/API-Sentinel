@@ -54,3 +54,24 @@ class BflaDetector:
         info = parse_path(rec.path)
         key = (rec.method, info.template)
         reason = None
+        
+      for rule in cfg.rules:
+            if rule.matches(rec.method, info.template):
+                if rec.role not in rule.allowed_roles:
+                    reason = "role_not_allowed"
+                break
+        else:
+            if cfg.learn_privileged and rec.role not in cfg.privileged_roles:
+                seen = self._roles_seen.get(key)
+                if (
+                    seen
+                    and sum(seen.values()) >= cfg.min_samples
+                    and set(seen) <= set(cfg.privileged_roles)
+                ):
+                    reason = "learned_privileged_endpoint"
+
+        if reason is None:
+            # Only legitimate traffic teaches the model, so a successful
+            # attack cannot turn a privileged endpoint into a public one.
+            self.learn_only(rec)
+            return []
