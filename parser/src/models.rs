@@ -122,6 +122,23 @@ pub struct RawFragment {
     pub payload: Vec<u8>,
 }
 
+impl RawFragment {
+    /// Construct a new `RawFragment` with payload.
+    pub fn new(
+        connection_id: impl Into<String>,
+        ts: f64,
+        direction: TrafficDirection,
+        payload: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self {
+            connection_id: connection_id.into(),
+            ts,
+            direction,
+            payload: payload.into(),
+        }
+    }
+}
+
 mod serde_bytes_or_vec {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -293,6 +310,26 @@ impl Record {
     /// Check if the HTTP response indicates success (2xx).
     pub fn ok(&self) -> bool {
         self.status >= 200 && self.status < 300
+    }
+
+    /// Check if the caller identity is unauthenticated or anonymous.
+    pub fn is_anonymous(&self) -> bool {
+        self.user == crate::auth::DEFAULT_ANONYMOUS_USER
+    }
+
+    /// Check if this record represents an orphan/unmatched response (e.g. captured mid-session).
+    pub fn is_orphan(&self) -> bool {
+        self.method == "UNKNOWN"
+    }
+
+    /// Check if this record contains a request body.
+    pub fn has_request_body(&self) -> bool {
+        self.req_body.is_some()
+    }
+
+    /// Check if this record contains a response body.
+    pub fn has_response_body(&self) -> bool {
+        self.resp_body.is_some()
     }
 
     /// Serialize record to compact JSON string.

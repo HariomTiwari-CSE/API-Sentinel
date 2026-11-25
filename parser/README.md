@@ -48,7 +48,8 @@ parser/
 │   ├── auth_hardening_tests.rs       # Hardened auth, malformed JWTs, precedence & zero secret leaks (Day 9)
 │   ├── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
 │   ├── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
-│   └── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
+│   ├── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
+│   └── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
 └── README.md                         # This documentation
 ```
 
@@ -124,6 +125,7 @@ Tests cover:
 * Day 10 HTTP parsing robustness & edge-case hardening: RFC 7230 §3.2.4 whitespace-before-colon smuggling rejection, framing conflict precedence (chunked overrides Content-Length), 1xx/204/304 special status body omission, fuzz resilience, and byte-by-byte TCP fragmentation
 * Day 11 Parser performance & resource efficiency: Zero-allocation lazy line splitting, token pattern matching, pre-allocated header hash maps, cursor-based buffer draining for pipelined traffic, and empirical benchmark harness
 * Day 12 Complete regression suite & parser stability: End-to-end fragmented request to chunked response pipeline, latency matching, Record JSON contract round-trip serialization, Day 11 optimization parity validation, multibyte UTF-8 panic-free auth extraction, ParserLimits enforcement, and idle connection cleanup (`clean_idle_connections`)
+* Day 13 Public API review & integration readiness: Crate root public interface (`api_sentinel_parser::*`), ambiguity-free downstream caller identity (`is_anonymous()`, `is_orphan()`), forward/backward JSON schema resilience, and connection lifecycle management
 
 ---
 
