@@ -75,3 +75,18 @@ class BflaDetector:
             # attack cannot turn a privileged endpoint into a public one.
             self.learn_only(rec)
             return []
+        
+        return [
+            Finding(
+                type="BFLA",
+                owasp="API5",
+                user=rec.user,
+                src_ip=rec.src_ip,
+                endpoint=f"{rec.method} {info.template}",
+                severity="critical" if rec.ok else "medium",
+                action="alert",
+                reason=reason,
+                ts=rec.ts,
+                evidence={"role": rec.role, "status": rec.status},
+            )
+        ]
