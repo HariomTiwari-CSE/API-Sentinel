@@ -49,7 +49,8 @@ parser/
 │   ├── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
 │   ├── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
 │   ├── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
-│   └── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
+│   ├── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
+│   └── connection_lifecycle_and_reassembly_tests.rs # Connection lifecycle, reassembly reliability & DoS queue bounds (Day 14)
 └── README.md                         # This documentation
 ```
 
@@ -126,6 +127,7 @@ Tests cover:
 * Day 11 Parser performance & resource efficiency: Zero-allocation lazy line splitting, token pattern matching, pre-allocated header hash maps, cursor-based buffer draining for pipelined traffic, and empirical benchmark harness
 * Day 12 Complete regression suite & parser stability: End-to-end fragmented request to chunked response pipeline, latency matching, Record JSON contract round-trip serialization, Day 11 optimization parity validation, multibyte UTF-8 panic-free auth extraction, ParserLimits enforcement, and idle connection cleanup (`clean_idle_connections`)
 * Day 13 Public API review & integration readiness: Crate root public interface (`api_sentinel_parser::*`), ambiguity-free downstream caller identity (`is_anonymous()`, `is_orphan()`), forward/backward JSON schema resilience, and connection lifecycle management
+* Day 14 Connection lifecycle & stream reassembly reliability: 50-cycle connection creation/reset/reconnect, byte-by-byte trickle fragmentation, boundary splits, pipelining with delayed responses, pending-request queue limits, and active vs. idle connection discrimination
 
 ---
 
@@ -135,9 +137,9 @@ Measured on host system using `parser/benches/bench_runner.py`:
 
 | Benchmark Scenario | Latency per Op | Throughput | Wire Bandwidth | Stability |
 | :--- | :---: | :---: | :---: | :---: |
-| **Simple GET Requests** | **0.91 µs** | **1,103,473 req/s** | 142.07 MB/s | ✅ Passed |
-| **POST Requests (JSON Body)** | **2.78 µs** | **359,775 req/s** | 72.40 MB/s | ✅ Passed |
-| **Chunked Responses** | **0.58 µs** | **1,718,922 resp/s** | 236.06 MB/s | ✅ Passed |
-| **Pipelined Traffic (4x batch)** | **0.15 µs** | **6,712,761 req/s** | 307.29 MB/s | ✅ Passed |
-| **50 Concurrent Streams** | **0.29 µs** | **3,492,547 tx/s** | Zero cross-talk | ✅ Passed |
+| **Simple GET Requests** | **0.93 µs** | **1,071,600 req/s** | 137.96 MB/s | ✅ Passed |
+| **POST Requests (JSON Body)** | **2.98 µs** | **335,826 req/s** | 67.58 MB/s | ✅ Passed |
+| **Chunked Responses** | **0.66 µs** | **1,510,528 resp/s** | 207.44 MB/s | ✅ Passed |
+| **Pipelined Traffic (4x batch)** | **0.17 µs** | **5,821,433 req/s** | 266.48 MB/s | ✅ Passed |
+| **50 Concurrent Streams** | **0.32 µs** | **3,114,915 tx/s** | Zero cross-talk | ✅ Passed |
 

@@ -154,7 +154,8 @@ api-sentinel/
 │   │   ├── robustness_edge_case_tests.rs # Edge-case robustness, framing, smuggling defense & recovery (Day 10)
 │   │   ├── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
 │   │   ├── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
-│   │   └── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
+│   │   ├── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
+│   │   └── connection_lifecycle_and_reassembly_tests.rs # Connection lifecycle, reassembly reliability & DoS queue bounds (Day 14)
 │   ├── benches/
 │   │   ├── parser_benchmarks.rs          # Reproducible Rust benchmarks (GET, POST JSON, Chunked, Pipelined, 50-conn)
 │   │   └── bench_runner.py               # Empirical benchmark measurement runner
@@ -199,6 +200,7 @@ All tests pass cleanly:
 * Parser performance & resource efficiency (zero-allocation line/token parsing, pre-allocated hash maps, cursor-based buffer draining, and 50-connection throughput benchmarks)
 * Regression testing & parser stability (complete end-to-end fragmented request to chunked response pipeline, latency matching, Record contract round-trip serialization, Day 11 optimization parity validation, multibyte UTF-8 panic-free auth extraction, ParserLimits enforcement, and idle connection cleanup)
 * Parser integration readiness & public API review (verified crate root interface, zero-ambiguity downstream caller identity, forward/backward JSON schema resilience, and connection lifecycle management)
+* Connection lifecycle & stream reassembly reliability (50-cycle connection creation/reset/reconnect, byte-by-byte trickle fragmentation, boundary splits, pipelining with delayed responses, pending-request queue limits, and active vs. idle connection discrimination)
 
 ---
 
@@ -221,6 +223,7 @@ Week 2: Detecting Attacks & Mid Review
 ├── [x] Day 11: Parser performance & resource efficiency (benchmarks, zero-allocation line/token parsing, cursor draining & memory bounds).
 ├── [x] Day 12: Regression testing & parser stability (end-to-end pipeline, Day 11 parity, security edge-case suite & zero-panic validation).
 ├── [x] Day 13: Parser integration readiness & public API review (stable public interface, Record contract, ambiguity-free identity & lifecycle tests).
+├── [x] Day 14: Connection lifecycle & stream reassembly reliability (50-cycle lifecycle, trickle fragmentation, DoS queue bounds & active connection retention).
 ├── Automatically map all discovered API endpoints.
 ├── Spot shadow APIs missing from the OpenAPI documentation.
 ├── Track object ownership and catch BOLA attacks.

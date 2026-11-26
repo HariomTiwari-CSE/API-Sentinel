@@ -63,6 +63,13 @@ impl ConnectionState {
         }
     }
 
+    /// Check if this connection state has no in-flight buffers or pending requests.
+    pub fn is_idle(&self) -> bool {
+        self.ingress_buffer.is_empty()
+            && self.egress_buffer.is_empty()
+            && self.pending_requests.is_empty()
+    }
+
     /// Clear all internal stream buffers and pending requests.
     pub fn clear(&mut self) {
         self.ingress_buffer.clear();
@@ -75,8 +82,17 @@ impl ConnectionState {
 ///
 /// Normalizes "10.0.0.5:45000->10.0.0.1:8080" and "10.0.0.1:8080->10.0.0.5:45000"
 /// into a canonical bidirectional key so ingress and egress fragments map to the same state.
+/// Also normalizes pre-existing "<->" pairs symmetrically.
 pub fn canonical_connection_key(conn_id: &str) -> String {
     if let Some((left, right)) = conn_id.split_once("->") {
+        let left = left.trim();
+        let right = right.trim();
+        if left <= right {
+            format!("{}<->{}", left, right)
+        } else {
+            format!("{}<->{}", right, left)
+        }
+    } else if let Some((left, right)) = conn_id.split_once("<->") {
         let left = left.trim();
         let right = right.trim();
         if left <= right {
@@ -92,6 +108,15 @@ pub fn canonical_connection_key(conn_id: &str) -> String {
 /// Parse source IP and port from a connection ID string (e.g. "10.0.0.5:45000->10.0.0.1:8080").
 pub fn parse_endpoints(conn_id: &str) -> (String, u16, String, u16) {
     if let Some((src, dst)) = conn_id.split_once("->") {
+        let (s_ip, s_port) = src.trim().split_once(':').unwrap_or((src.trim(), "0"));
+        let (d_ip, d_port) = dst.trim().split_once(':').unwrap_or((dst.trim(), "0"));
+        (
+            s_ip.to_string(),
+            s_port.parse().unwrap_or(0),
+            d_ip.to_string(),
+            d_port.parse().unwrap_or(0),
+        )
+    } else if let Some((src, dst)) = conn_id.split_once("<->") {
         let (s_ip, s_port) = src.trim().split_once(':').unwrap_or((src.trim(), "0"));
         let (d_ip, d_port) = dst.trim().split_once(':').unwrap_or((dst.trim(), "0"));
         (
@@ -197,6 +222,19 @@ impl StreamReassembler {
     /// Alias for `sweep_idle_connections` to clean idle connections exceeding timeout.
     pub fn clean_idle_connections(&mut self, current_ts: f64) -> usize {
         self.sweep_idle_connections(current_ts)
+    }
+
+    /// Return the total number of tracked connections (both active and in-flight).
+    pub fn connection_count(&self) -> usize {
+        self.connections.len()
+    }
+
+    /// Return the total count of pending unmatched requests across all active connections.
+    pub fn total_pending_requests(&self) -> usize {
+        self.connections
+            .values()
+            .map(|s| s.pending_requests.len())
+            .sum()
     }
 }
 
