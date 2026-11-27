@@ -66,7 +66,8 @@ pub use auth::{
 };
 pub use base::HttpParser;
 pub use models::{
-    ConnectionKey, ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record,
+    classify_error_message, redact_sensitive_preview, ConnectionKey, ParsedHTTPRequest,
+    ParsedHTTPResponse, ParserDiagnostic, ParserErrorKind, ParserLimits, RawFragment, Record,
     TrafficDirection,
 };
 pub use reassembler::{

@@ -13,11 +13,12 @@
 use crate::auth::extract_identity_and_role;
 use crate::base::HttpParser;
 use crate::models::{
-    ParsedHTTPRequest, ParsedHTTPResponse, ParserLimits, RawFragment, Record, TrafficDirection,
+    classify_error_message, redact_sensitive_preview, ParsedHTTPRequest, ParsedHTTPResponse,
+    ParserDiagnostic, ParserErrorKind, ParserLimits, RawFragment, Record, TrafficDirection,
 };
 use crate::request::parse_http_request_with_limits;
 use crate::response::parse_http_response_with_limits;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// Tracks the byte buffers and in-flight transactions for a single TCP connection.
 #[derive(Debug, Clone, Default)]
@@ -144,6 +145,8 @@ fn find_next_line_boundary(buf: &[u8]) -> usize {
 /// Buffer capacity threshold above which drained empty buffers are shrunk to prevent memory retention.
 const BUFFER_SHRINK_THRESHOLD: usize = 64 * 1024;
 const BUFFER_SHRINK_TARGET: usize = 4096;
+/// Maximum number of diagnostic entries retained in memory to prevent unbounded growth.
+const DEFAULT_MAX_DIAGNOSTICS: usize = 128;
 
 /// Core stream reassembly engine that buffers network fragments, parses HTTP/1.x
 /// transactions, matches requests with responses in FIFO order, and emits standardized `Record`s.
@@ -155,6 +158,9 @@ pub struct StreamReassembler {
     pub unmatched_responses_count: usize,
     pub swept_connections_count: usize,
     pub last_sweep_ts: f64,
+    pub diagnostics: VecDeque<ParserDiagnostic>,
+    pub max_diagnostics: usize,
+    pub error_counts: HashMap<ParserErrorKind, usize>,
 }
 
 impl Default for StreamReassembler {
@@ -165,25 +171,11 @@ impl Default for StreamReassembler {
 
 impl StreamReassembler {
     pub fn new() -> Self {
-        Self {
-            connections: HashMap::new(),
-            idle_timeout_secs: 60.0,
-            limits: ParserLimits::default(),
-            unmatched_responses_count: 0,
-            swept_connections_count: 0,
-            last_sweep_ts: 0.0,
-        }
+        Self::with_config(60.0, ParserLimits::default())
     }
 
     pub fn with_timeout(timeout_secs: f64) -> Self {
-        Self {
-            connections: HashMap::new(),
-            idle_timeout_secs: timeout_secs,
-            limits: ParserLimits::default(),
-            unmatched_responses_count: 0,
-            swept_connections_count: 0,
-            last_sweep_ts: 0.0,
-        }
+        Self::with_config(timeout_secs, ParserLimits::default())
     }
 
     pub fn with_config(timeout_secs: f64, limits: ParserLimits) -> Self {
@@ -194,7 +186,56 @@ impl StreamReassembler {
             unmatched_responses_count: 0,
             swept_connections_count: 0,
             last_sweep_ts: 0.0,
+            diagnostics: VecDeque::with_capacity(DEFAULT_MAX_DIAGNOSTICS),
+            max_diagnostics: DEFAULT_MAX_DIAGNOSTICS,
+            error_counts: HashMap::new(),
         }
+    }
+
+    /// Record a bounded, redacted diagnostic entry without exposing credentials or bodies.
+    pub fn record_diagnostic(
+        &mut self,
+        ts: f64,
+        connection_id: &str,
+        direction: TrafficDirection,
+        kind: ParserErrorKind,
+        raw_msg: &str,
+    ) {
+        *self.error_counts.entry(kind).or_insert(0) += 1;
+        if self.max_diagnostics == 0 {
+            return;
+        }
+        if self.diagnostics.len() >= self.max_diagnostics {
+            self.diagnostics.pop_front();
+        }
+        self.diagnostics.push_back(ParserDiagnostic {
+            ts,
+            connection_id: connection_id.to_string(),
+            direction,
+            kind,
+            message: redact_sensitive_preview(raw_msg, 120),
+        });
+    }
+
+    /// Return all retained bounded diagnostic entries.
+    pub fn diagnostics(&self) -> Vec<ParserDiagnostic> {
+        self.diagnostics.iter().cloned().collect()
+    }
+
+    /// Return the count of errors observed for a specific `ParserErrorKind`.
+    pub fn error_count(&self, kind: ParserErrorKind) -> usize {
+        self.error_counts.get(&kind).copied().unwrap_or(0)
+    }
+
+    /// Return the total count of classified errors observed across all categories.
+    pub fn total_errors(&self) -> usize {
+        self.error_counts.values().sum()
+    }
+
+    /// Clear retained diagnostic logs and error counters.
+    pub fn clear_diagnostics(&mut self) {
+        self.diagnostics.clear();
+        self.error_counts.clear();
     }
 
     /// Sweep and evict connections that have been inactive longer than `idle_timeout_secs`.
@@ -251,6 +292,7 @@ impl HttpParser for StreamReassembler {
         }
 
         let canon_id = canonical_connection_key(&fragment.connection_id);
+        let diag_conn_id = canon_id.clone();
         let (src_ip, src_port, dst_ip, dst_port) = parse_endpoints(&fragment.connection_id);
 
         let limits = self.limits;
@@ -260,6 +302,7 @@ impl HttpParser for StreamReassembler {
             .or_insert_with(|| ConnectionState::new(canon_id, fragment.ts));
 
         let mut finalized_records = Vec::new();
+        let mut pending_diags: Vec<(ParserErrorKind, String)> = Vec::new();
 
         match fragment.direction {
             TrafficDirection::Ingress => {
@@ -290,10 +333,19 @@ impl HttpParser for StreamReassembler {
                         {
                             // Evict oldest unmatched pending request to bound memory growth
                             state.pending_requests.remove(0);
+                            pending_diags.push((
+                                ParserErrorKind::LimitViolation,
+                                format!(
+                                    "Pending request queue limit {} reached; evicted oldest request",
+                                    limits.max_pending_requests
+                                ),
+                            ));
                         }
                         state.pending_requests.push(req);
                         cursor += consumed;
-                    } else if res.error.is_some() {
+                    } else if let Some(ref err_msg) = res.error {
+                        let kind = classify_error_message(err_msg);
+                        pending_diags.push((kind, err_msg.clone()));
                         // Malformed request line or unrecoverable error:
                         // Discard the corrupted line and continue scanning for valid pipelined requests
                         let remaining_len = state.ingress_buffer.len() - cursor;
@@ -371,6 +423,10 @@ impl HttpParser for StreamReassembler {
                         } else {
                             // Task 4: Orphan/unmatched response (e.g. captured mid-session or missing request fragment)
                             self.unmatched_responses_count += 1;
+                            pending_diags.push((
+                                ParserErrorKind::ReassemblyFailure,
+                                format!("Orphan response (status {}) received without pending request", resp.status),
+                            ));
                             let client_ip = if !dst_ip.is_empty() {
                                 dst_ip.clone()
                             } else {
@@ -390,7 +446,9 @@ impl HttpParser for StreamReassembler {
                             };
                             finalized_records.push(record);
                         }
-                    } else if res.error.is_some() {
+                    } else if let Some(ref err_msg) = res.error {
+                        let kind = classify_error_message(err_msg);
+                        pending_diags.push((kind, err_msg.clone()));
                         let remaining_len = state.egress_buffer.len() - cursor;
                         let drain_len = if res.bytes_consumed > 0 {
                             res.bytes_consumed.min(remaining_len)
@@ -417,6 +475,16 @@ impl HttpParser for StreamReassembler {
                     state.egress_buffer.shrink_to(BUFFER_SHRINK_TARGET);
                 }
             }
+        }
+
+        for (kind, msg) in pending_diags {
+            self.record_diagnostic(
+                fragment.ts,
+                &diag_conn_id,
+                fragment.direction,
+                kind,
+                &msg,
+            );
         }
 
         finalized_records

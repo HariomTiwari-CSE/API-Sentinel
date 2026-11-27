@@ -407,3 +407,160 @@ impl ParserLimits {
         self
     }
 }
+
+/// Categorized classification of parser and reassembly errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParserErrorKind {
+    /// Incomplete message; waiting for additional TCP fragments.
+    IncompleteData,
+    /// Malformed HTTP request line or response status line.
+    MalformedStartLine,
+    /// Invalid HTTP header syntax (missing colon, empty name, bare CR, whitespace before colon).
+    InvalidHeader,
+    /// Framing or body decoding error (conflicting Content-Length, invalid chunked encoding).
+    FramingOrBodyError,
+    /// Configurable `ParserLimits` violation (oversized header, line, count, or body).
+    LimitViolation,
+    /// Stream reassembly failure (orphan response, pending queue overflow, unrecoverable stream error).
+    ReassemblyFailure,
+}
+
+impl ParserErrorKind {
+    /// Return a stable snake_case string representation for metrics and logging.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ParserErrorKind::IncompleteData => "incomplete_data",
+            ParserErrorKind::MalformedStartLine => "malformed_start_line",
+            ParserErrorKind::InvalidHeader => "invalid_header",
+            ParserErrorKind::FramingOrBodyError => "framing_or_body_error",
+            ParserErrorKind::LimitViolation => "limit_violation",
+            ParserErrorKind::ReassemblyFailure => "reassembly_failure",
+        }
+    }
+}
+
+impl fmt::Display for ParserErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Bounded, redacted diagnostic entry for parser and reassembly debugging.
+/// Never exposes JWTs, API keys, authorization headers, or request/response bodies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParserDiagnostic {
+    pub ts: f64,
+    pub connection_id: String,
+    pub direction: TrafficDirection,
+    pub kind: ParserErrorKind,
+    pub message: String,
+}
+
+/// Classify a parser error message into a deterministic `ParserErrorKind`.
+pub fn classify_error_message(msg: &str) -> ParserErrorKind {
+    let lower = msg.to_ascii_lowercase();
+    if lower.contains("exceeds maximum")
+        || lower.contains("limit")
+        || lower.contains("queue overflow")
+    {
+        ParserErrorKind::LimitViolation
+    } else if lower.contains("chunk")
+        || lower.contains("content-length")
+        || lower.contains("framing")
+    {
+        ParserErrorKind::FramingOrBodyError
+    } else if lower.contains("header")
+        || lower.contains("colon")
+        || lower.contains("whitespace disallowed")
+        || (lower.contains("bare cr") && lower.contains("header"))
+    {
+        ParserErrorKind::InvalidHeader
+    } else if lower.contains("request line")
+        || lower.contains("status line")
+        || lower.contains("response line")
+        || lower.contains("http method")
+        || lower.contains("http version")
+        || lower.contains("status code")
+    {
+        ParserErrorKind::MalformedStartLine
+    } else if lower.contains("orphan") || lower.contains("reassembly") {
+        ParserErrorKind::ReassemblyFailure
+    } else {
+        ParserErrorKind::ReassemblyFailure
+    }
+}
+
+/// Produce a bounded, sanitized preview of raw diagnostic text.
+///
+/// Security guarantees:
+/// - Strips ASCII control characters (`\r`, `\n`, `\0`, etc.) to prevent log injection.
+/// - Redacts JWT-like tokens (`eyJ...` or 3-part dot-separated tokens).
+/// - Redacts sensitive credential headers/parameters (`authorization`, `bearer`, `x-api-key`, `api-key`, `x-auth-token`, `cookie`, `secret`, `password`, `token`).
+/// - Strictly bounds output length to `max_len` characters (UTF-8 boundary safe).
+pub fn redact_sensitive_preview(raw: &str, max_len: usize) -> String {
+    if max_len == 0 || raw.is_empty() {
+        return String::new();
+    }
+
+    // 1. Strip control chars and normalize whitespace to single spaces
+    let sanitized: String = raw
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+
+    let lower = sanitized.to_ascii_lowercase();
+
+    // 2. Check for sensitive header/credential keywords
+    const SENSITIVE_KEYWORDS: &[&str] = &[
+        "authorization",
+        "bearer ",
+        "bearer\t",
+        "x-api-key",
+        "api-key",
+        "api_key",
+        "x-auth-token",
+        "set-cookie",
+        "cookie:",
+        "password",
+        "secret",
+    ];
+
+    for kw in SENSITIVE_KEYWORDS {
+        if let Some(pos) = lower.find(kw) {
+            let prefix: String = sanitized[..pos].chars().take(max_len).collect();
+            let kw_clean = kw.trim();
+            if prefix.is_empty() {
+                return format!("[REDACTED:{}]", kw_clean);
+            } else {
+                return format!("{}[REDACTED:{}]", prefix, kw_clean);
+            }
+        }
+    }
+
+    // 3. Check for JWT-like patterns (e.g., "eyJ..." or 3 dot-separated base64 segments)
+    let mut output_parts = Vec::new();
+    for word in sanitized.split_whitespace() {
+        let is_jwt_like = (word.starts_with("eyJ") && word.contains('.'))
+            || (word.len() >= 24 && word.matches('.').count() == 2);
+        if is_jwt_like {
+            output_parts.push("[REDACTED_JWT]");
+        } else if let Some(q_idx) = word.find('?') {
+            // Strip query string in URL previews to avoid leaking ?token=... or ?api_key=...
+            let base = &word[..q_idx];
+            output_parts.push(base);
+            output_parts.push("?[REDACTED_QUERY]");
+        } else {
+            output_parts.push(word);
+        }
+    }
+
+    let joined = output_parts.join(" ");
+    let char_count = joined.chars().count();
+    if char_count > max_len {
+        let truncated: String = joined.chars().take(max_len).collect();
+        format!("{}...", truncated)
+    } else {
+        joined
+    }
+}

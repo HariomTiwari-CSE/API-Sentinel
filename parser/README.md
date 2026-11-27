@@ -50,7 +50,8 @@ parser/
 │   ├── performance_and_resource_tests.rs # Zero-allocation line/token parity & cursor draining tests (Day 11)
 │   ├── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
 │   ├── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
-│   └── connection_lifecycle_and_reassembly_tests.rs # Connection lifecycle, reassembly reliability & DoS queue bounds (Day 14)
+│   ├── connection_lifecycle_and_reassembly_tests.rs # Connection lifecycle, reassembly reliability & DoS queue bounds (Day 14)
+│   └── error_classification_and_diagnostics_tests.rs # Error classification, redaction & bounded diagnostics (Day 15)
 └── README.md                         # This documentation
 ```
 
@@ -128,6 +129,7 @@ Tests cover:
 * Day 12 Complete regression suite & parser stability: End-to-end fragmented request to chunked response pipeline, latency matching, Record JSON contract round-trip serialization, Day 11 optimization parity validation, multibyte UTF-8 panic-free auth extraction, ParserLimits enforcement, and idle connection cleanup (`clean_idle_connections`)
 * Day 13 Public API review & integration readiness: Crate root public interface (`api_sentinel_parser::*`), ambiguity-free downstream caller identity (`is_anonymous()`, `is_orphan()`), forward/backward JSON schema resilience, and connection lifecycle management
 * Day 14 Connection lifecycle & stream reassembly reliability: 50-cycle connection creation/reset/reconnect, byte-by-byte trickle fragmentation, boundary splits, pipelining with delayed responses, pending-request queue limits, and active vs. idle connection discrimination
+* Day 15 Error classification & safe diagnostics: Deterministic `ParserErrorKind` taxonomy (`IncompleteData`, `MalformedStartLine`, `InvalidHeader`, `FramingOrBodyError`, `LimitViolation`, `ReassemblyFailure`), credential/JWT/query redaction (`redact_sensitive_preview`), bounded diagnostic ring buffer (`ParserDiagnostic`), and malformed traffic recovery
 
 ---
 

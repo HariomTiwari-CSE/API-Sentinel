@@ -10,7 +10,10 @@
 //! - Special status code semantics (204 No Content, 304 Not Modified, 1xx).
 //! - Fault-tolerant handling of incomplete, malformed, and empty responses.
 
-use crate::models::{ParsedHTTPResponse, ParserLimits};
+use crate::models::{
+    classify_error_message, redact_sensitive_preview, ParsedHTTPResponse, ParserErrorKind,
+    ParserLimits,
+};
 use crate::request::{
     decode_body_content, decode_body_content_with_limits, decode_chunked_body_with_limits,
     find_header_boundary,
@@ -24,6 +27,19 @@ pub struct ResponseParseResult {
     pub bytes_consumed: usize,
     pub is_complete: bool,
     pub error: Option<String>,
+}
+
+impl ResponseParseResult {
+    /// Classify the outcome into a `ParserErrorKind` if parsing did not complete cleanly.
+    pub fn error_kind(&self) -> Option<ParserErrorKind> {
+        if self.is_complete {
+            None
+        } else if let Some(ref err) = self.error {
+            Some(classify_error_message(err))
+        } else {
+            Some(ParserErrorKind::IncompleteData)
+        }
+    }
 }
 
 /// Parse a single HTTP/1.x response from a raw byte buffer using default limits.
@@ -88,7 +104,10 @@ pub fn parse_http_response_with_limits(
                         response: None,
                         bytes_consumed: pos + delim_len,
                         is_complete: false,
-                        error: Some(format!("Malformed response line prefix: {}", trimmed)),
+                        error: Some(format!(
+                            "Malformed response line prefix: {}",
+                            redact_sensitive_preview(trimmed, 48)
+                        )),
                     };
                 }
             }
@@ -156,7 +175,10 @@ pub fn parse_http_response_with_limits(
                 response: None,
                 bytes_consumed: first_line_consumed,
                 is_complete: false,
-                error: Some(format!("Malformed status line tokens: {}", status_line)),
+                error: Some(format!(
+                    "Malformed status line tokens: {}",
+                    redact_sensitive_preview(status_line, 48)
+                )),
             };
         }
     };
@@ -255,7 +277,7 @@ pub fn parse_http_response_with_limits(
                     is_complete: false,
                     error: Some(format!(
                         "Malformed response header line missing colon delimiter: {}",
-                        trimmed
+                        redact_sensitive_preview(trimmed, 48)
                     )),
                 };
             }
@@ -268,7 +290,7 @@ pub fn parse_http_response_with_limits(
                 is_complete: false,
                 error: Some(format!(
                     "Whitespace disallowed between header name and colon: '{}'",
-                    name
+                    redact_sensitive_preview(name, 32)
                 )),
             };
         }

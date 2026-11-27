@@ -9,7 +9,10 @@
 //! - Safe JSON body decoding.
 //! - Fault-tolerant handling of incomplete, malformed, and empty requests.
 
-use crate::models::{ParsedHTTPRequest, ParserLimits};
+use crate::models::{
+    classify_error_message, redact_sensitive_preview, ParsedHTTPRequest, ParserErrorKind,
+    ParserLimits,
+};
 use std::collections::HashMap;
 
 /// Result of attempting to parse an HTTP request from a byte buffer.
@@ -19,6 +22,19 @@ pub struct RequestParseResult {
     pub bytes_consumed: usize,
     pub is_complete: bool,
     pub error: Option<String>,
+}
+
+impl RequestParseResult {
+    /// Classify the outcome into a `ParserErrorKind` if parsing did not complete cleanly.
+    pub fn error_kind(&self) -> Option<ParserErrorKind> {
+        if self.is_complete {
+            None
+        } else if let Some(ref err) = self.error {
+            Some(classify_error_message(err))
+        } else {
+            Some(ParserErrorKind::IncompleteData)
+        }
+    }
 }
 
 /// Standard known HTTP methods.
@@ -541,7 +557,10 @@ pub fn parse_http_request_with_limits(
                             request: None,
                             bytes_consumed: pos + delim_len,
                             is_complete: false,
-                            error: Some(format!("Malformed request line: {}", first_line)),
+                            error: Some(format!(
+                                "Malformed request line: {}",
+                                redact_sensitive_preview(&first_line, 64)
+                            )),
                         };
                     }
                 }
@@ -641,7 +660,10 @@ pub fn parse_http_request_with_limits(
                 request: None,
                 bytes_consumed: first_line_consumed,
                 is_complete: false,
-                error: Some(format!("Malformed request line tokens: {}", request_line)),
+                error: Some(format!(
+                    "Malformed request line tokens: {}",
+                    redact_sensitive_preview(request_line, 64)
+                )),
             };
         }
     };
@@ -727,7 +749,7 @@ pub fn parse_http_request_with_limits(
                     is_complete: false,
                     error: Some(format!(
                         "Malformed header line missing colon delimiter: {}",
-                        trimmed
+                        redact_sensitive_preview(trimmed, 48)
                     )),
                 };
             }
@@ -740,7 +762,7 @@ pub fn parse_http_request_with_limits(
                 is_complete: false,
                 error: Some(format!(
                     "Whitespace disallowed between header name and colon: '{}'",
-                    name
+                    redact_sensitive_preview(name, 32)
                 )),
             };
         }
