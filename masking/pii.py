@@ -1,4 +1,15 @@
-"""PII & credential redaction engine for API-Sentinel findings and records."""
+"""PII & credential redaction engine for API-Sentinel findings and records.
+
+Supports the following redaction categories:
+  - Emails       : local part masked (a***@domain.com)
+  - JWTs         : Bearer tokens replaced with [REDACTED_JWT]
+  - API keys     : sk_*, AKIA*, ghp_*, glpat_* patterns replaced
+  - Passwords    : Any value under secret-class dict keys
+  - Credit cards : Luhn-validated, last 4 preserved (****-****-****-1234)
+  - SSNs         : Pattern XXX-XX-XXXX replaced with ***-**-****
+  - Phone numbers: International and US formats redacted
+  - Addresses    : Values under address-class dict keys
+"""
 
 from __future__ import annotations
 
