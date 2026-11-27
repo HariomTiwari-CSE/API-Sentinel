@@ -62,6 +62,7 @@ function formatTime(ts) {
 }
 
 export default function App() {
+  const APP_VERSION = "1.0.0";
   const [tab, setTab] = useState("overview");
   const [findings, setFindings] = useState(SEED_FINDINGS);
   const [inventory, setInventory] = useState(SEED_INVENTORY);
@@ -245,7 +246,7 @@ export default function App() {
           </div>
           <div>
             <h1>API-Sentinel</h1>
-            <p>Runtime BOLA, Shadow API &amp; OWASP Threat Dashboard</p>
+            <p>Runtime BOLA, Shadow API &amp; OWASP Threat Dashboard &nbsp;v{APP_VERSION}</p>
           </div>
         </div>
 
