@@ -1,0 +1,17 @@
+{
+  "iterations": 300,
+  "sla_ms": 5.0,
+  "sla_passed": true,
+  "baseline_ms": {
+    "mean": 0.22,
+    "p50": 0.2075,
+    "p95": 0.2777,
+    "p99": 0.5035
+  },
+  "masking_overhead_ms": {
+    "mean": 0.0496,
+    "p50": 0.0472,
+    "p95": 0.0584,
+    "p99": 0.0956
+  }
+}

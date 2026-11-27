@@ -1,0 +1,48 @@
+# Reference Docker Compose for full OWASP crAPI deployment (Linux / Docker host)
+# Used when testing Pranav's kernel eBPF sensor (sensor/) against full containerized crAPI.
+# For fast local CI/unit testing without Docker, run `uvicorn testbed.app.server:app --port 8888`.
+
+services:
+  crapi-identity:
+    image: crapi/crapi-identity:latest
+    container_name: api-sentinel-crapi-identity
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+    networks:
+      - crapi-net
+
+  crapi-workshop:
+    image: crapi/crapi-workshop:latest
+    container_name: api-sentinel-crapi-workshop
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_PORT=8000
+    networks:
+      - crapi-net
+
+  crapi-community:
+    image: crapi/crapi-community:latest
+    container_name: api-sentinel-crapi-community
+    ports:
+      - "8087:8087"
+    networks:
+      - crapi-net
+
+  crapi-web:
+    image: crapi/crapi-web:latest
+    container_name: api-sentinel-crapi-web
+    ports:
+      - "8888:80"
+    depends_on:
+      - crapi-identity
+      - crapi-workshop
+      - crapi-community
+    networks:
+      - crapi-net
+
+networks:
+  crapi-net:
+    driver: bridge

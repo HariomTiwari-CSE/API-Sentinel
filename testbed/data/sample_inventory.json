@@ -1,0 +1,133 @@
+[
+  {
+    "endpoint": "/workshop/api/shop/coupons/validate",
+    "method": "POST",
+    "status": "documented",
+    "hits": 13,
+    "avg_latency_ms": 0.26,
+    "owasp_tags": [
+      "API4"
+    ],
+    "last_seen": 1795769772.9576
+  },
+  {
+    "endpoint": "/workshop/api/shop/orders/{id}",
+    "method": "GET",
+    "status": "documented",
+    "hits": 9,
+    "avg_latency_ms": 0.24,
+    "owasp_tags": [
+      "API1"
+    ],
+    "last_seen": 1795769772.9524
+  },
+  {
+    "endpoint": "/identity/api/auth/login",
+    "method": "POST",
+    "status": "documented",
+    "hits": 5,
+    "avg_latency_ms": 1.29,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9532
+  },
+  {
+    "endpoint": "/identity/api/v2/vehicle/{id}/location",
+    "method": "GET",
+    "status": "documented",
+    "hits": 3,
+    "avg_latency_ms": 0.45,
+    "owasp_tags": [
+      "API1"
+    ],
+    "last_seen": 1795769772.9529
+  },
+  {
+    "endpoint": "/identity/api/v2/admin/videos",
+    "method": "GET",
+    "status": "documented",
+    "hits": 2,
+    "avg_latency_ms": 0.27,
+    "owasp_tags": [
+      "API5"
+    ],
+    "last_seen": 1795769772.9537
+  },
+  {
+    "endpoint": "/workshop/api/shop/orders",
+    "method": "GET",
+    "status": "documented",
+    "hits": 2,
+    "avg_latency_ms": 0.27,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9504
+  },
+  {
+    "endpoint": "/workshop/api/shop/products",
+    "method": "GET",
+    "status": "documented",
+    "hits": 1,
+    "avg_latency_ms": 0.63,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9457
+  },
+  {
+    "endpoint": "/workshop/api/shop/products/{id}",
+    "method": "GET",
+    "status": "documented",
+    "hits": 1,
+    "avg_latency_ms": 0.52,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9462
+  },
+  {
+    "endpoint": "/identity/api/v2/user/dashboard",
+    "method": "GET",
+    "status": "documented",
+    "hits": 1,
+    "avg_latency_ms": 0.61,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9468
+  },
+  {
+    "endpoint": "/community/api/v2/posts/{id}",
+    "method": "GET",
+    "status": "documented",
+    "hits": 1,
+    "avg_latency_ms": 0.4,
+    "owasp_tags": [],
+    "last_seen": 1795769772.9481
+  },
+  {
+    "endpoint": "/identity/api/v2/admin/users",
+    "method": "GET",
+    "status": "documented",
+    "hits": 1,
+    "avg_latency_ms": 0.27,
+    "owasp_tags": [
+      "API5"
+    ],
+    "last_seen": 1795769772.9535
+  },
+  {
+    "endpoint": "/api/v1/debug/users",
+    "method": "GET",
+    "status": "shadow",
+    "hits": 1,
+    "avg_latency_ms": 0.25,
+    "owasp_tags": [
+      "API9"
+    ],
+    "last_seen": 1795769772.954
+  },
+  {
+    "endpoint": "/api/v1/orders/export-legacy",
+    "method": "GET",
+    "status": "zombie",
+    "hits": 1,
+    "avg_latency_ms": 0.3,
+    "owasp_tags": [
+      "API9"
+    ],
+    "last_seen": 1795769772.9543
+  }
+]

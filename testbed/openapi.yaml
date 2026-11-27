@@ -1,0 +1,122 @@
+openapi: 3.0.3
+info:
+  title: crAPI Testbed Official API Contract
+  version: 2.0.0
+  description: >
+    Official OpenAPI specification for the API-Sentinel crAPI-compatible testbed.
+    Feeds Agam's Shadow API Discovery engine (discovery/).
+    Undocumented Shadow (/api/v1/debug/users) and Zombie (/api/v1/orders/export-legacy)
+    routes are intentionally omitted from this contract so discovery/ flags them as API9.
+servers:
+  - url: http://localhost:8888
+    description: Local crAPI-compatible testbed
+paths:
+  /identity/api/auth/login:
+    post:
+      summary: Authenticate user and issue JWT
+      tags: [identity]
+      responses:
+        "200":
+          description: JWT issued
+  /identity/api/v2/user/dashboard:
+    get:
+      summary: Get authenticated user dashboard profile
+      tags: [identity]
+      responses:
+        "200":
+          description: User profile
+  /identity/api/v2/vehicle/{vehicle_id}/location:
+    get:
+      summary: Get GPS coordinates for an owned vehicle
+      tags: [identity]
+      parameters:
+        - name: vehicle_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Vehicle location
+  /identity/api/v2/admin/videos:
+    get:
+      summary: Admin-only vehicle diagnostic videos
+      tags: [admin]
+      x-required-role: admin
+      responses:
+        "200":
+          description: Diagnostic video list
+  /identity/api/v2/admin/users:
+    get:
+      summary: Admin-only user directory
+      tags: [admin]
+      x-required-role: admin
+      responses:
+        "200":
+          description: User directory
+  /workshop/api/shop/products:
+    get:
+      summary: List public shop products
+      tags: [workshop]
+      responses:
+        "200":
+          description: Product catalog
+  /workshop/api/shop/products/{product_id}:
+    get:
+      summary: Get public product details
+      tags: [workshop]
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Product detail
+  /workshop/api/shop/orders:
+    get:
+      summary: List orders owned by authenticated user
+      tags: [workshop]
+      responses:
+        "200":
+          description: User's orders
+    post:
+      summary: Create a new shop order
+      tags: [workshop]
+      responses:
+        "201":
+          description: Order created
+  /workshop/api/shop/orders/{order_id}:
+    get:
+      summary: Get order details by ID
+      tags: [workshop]
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Order details
+  /workshop/api/shop/coupons/validate:
+    post:
+      summary: Validate promotional coupon code
+      tags: [workshop]
+      responses:
+        "200":
+          description: Coupon validation result
+  /community/api/v2/posts/{post_id}:
+    get:
+      summary: Get community post or private mechanic note
+      tags: [community]
+      parameters:
+        - name: post_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Community post
