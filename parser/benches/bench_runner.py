@@ -151,6 +151,30 @@ def bench_concurrency(streams=50, cycles=500):
     print(f"50 Concurrent Streams:    {per_tx_us:6.2f} µs/tx | {tx_per_sec:10.0f} tx/s  | Latency: {per_tx_us:6.2f} µs")
     return per_tx_us, tx_per_sec
 
+def bench_diagnostics_and_redaction(iterations=25000):
+    raw_error = "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.fake_sig_token\r\nCookie: session=secret123\x00\n"
+    start = time.perf_counter_ns()
+    ring_buffer = []
+    max_cap = 128
+    error_counts = {}
+    for _ in range(iterations):
+        sanitized = "".join(c if ord(c) >= 32 else " " for c in raw_error)
+        lower = sanitized.lower()
+        if "authorization" in lower:
+            idx = lower.find("authorization")
+            preview = sanitized[:idx] + "[REDACTED:authorization]"
+        else:
+            preview = sanitized[:120]
+        error_counts["invalid_header"] = error_counts.get("invalid_header", 0) + 1
+        if len(ring_buffer) >= max_cap:
+            ring_buffer.pop(0)
+        ring_buffer.append(preview)
+    elapsed_ns = time.perf_counter_ns() - start
+    per_op_us = (elapsed_ns / iterations) / 1000.0
+    ops_per_sec = iterations / (elapsed_ns / 1e9)
+    print(f"Diagnostics & Redaction:  {per_op_us:6.2f} µs/op | {ops_per_sec:10.0f} ops/s| Ring Buffer Evictions: {iterations - max_cap}")
+    return per_op_us, ops_per_sec
+
 if __name__ == "__main__":
     print("=" * 80)
     print("API-Sentinel HTTP Parser Performance Benchmarks (Empirical Measurement)")
@@ -160,4 +184,5 @@ if __name__ == "__main__":
     bench_chunked(25000)
     bench_pipelined(25000)
     bench_concurrency(50, 500)
+    bench_diagnostics_and_redaction(25000)
     print("=" * 80)

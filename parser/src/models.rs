@@ -463,11 +463,21 @@ pub fn classify_error_message(msg: &str) -> ParserErrorKind {
     if lower.contains("exceeds maximum")
         || lower.contains("limit")
         || lower.contains("queue overflow")
+        || lower.contains("overflow")
     {
         ParserErrorKind::LimitViolation
+    } else if lower.contains("incomplete")
+        || lower.contains("waiting")
+        || lower.contains("unexpected eof")
+        || lower.contains("partial")
+        || lower.contains("truncated")
+    {
+        ParserErrorKind::IncompleteData
     } else if lower.contains("chunk")
         || lower.contains("content-length")
         || lower.contains("framing")
+        || lower.contains("transfer-encoding")
+        || lower.contains("body")
     {
         ParserErrorKind::FramingOrBodyError
     } else if lower.contains("header")
@@ -482,9 +492,15 @@ pub fn classify_error_message(msg: &str) -> ParserErrorKind {
         || lower.contains("http method")
         || lower.contains("http version")
         || lower.contains("status code")
+        || lower.contains("uri")
+        || lower.contains("target")
+        || lower.contains("start line")
     {
         ParserErrorKind::MalformedStartLine
-    } else if lower.contains("orphan") || lower.contains("reassembly") {
+    } else if lower.contains("orphan")
+        || lower.contains("reassembly")
+        || lower.contains("stream")
+    {
         ParserErrorKind::ReassemblyFailure
     } else {
         ParserErrorKind::ReassemblyFailure
@@ -496,8 +512,9 @@ pub fn classify_error_message(msg: &str) -> ParserErrorKind {
 /// Security guarantees:
 /// - Strips ASCII control characters (`\r`, `\n`, `\0`, etc.) to prevent log injection.
 /// - Redacts JWT-like tokens (`eyJ...` or 3-part dot-separated tokens).
-/// - Redacts sensitive credential headers/parameters (`authorization`, `bearer`, `x-api-key`, `api-key`, `x-auth-token`, `cookie`, `secret`, `password`, `token`).
-/// - Strictly bounds output length to `max_len` characters (UTF-8 boundary safe).
+/// - Redacts sensitive credential headers/parameters (`authorization`, `bearer`, `x-api-key`, `api-key`, `x-auth-token`, `cookie`, `secret`, `password`, `token`, `session`).
+/// - Strips URL query parameters to avoid leaking tokens, keys, or credentials in URIs.
+/// - Strictly bounds output length to `max_len` characters (UTF-8 character boundary safe).
 pub fn redact_sensitive_preview(raw: &str, max_len: usize) -> String {
     if max_len == 0 || raw.is_empty() {
         return String::new();
@@ -519,39 +536,53 @@ pub fn redact_sensitive_preview(raw: &str, max_len: usize) -> String {
         "x-api-key",
         "api-key",
         "api_key",
+        "apikey",
         "x-auth-token",
         "set-cookie",
-        "cookie:",
+        "cookie",
         "password",
+        "passwd",
         "secret",
+        "access_token",
+        "refresh_token",
+        "session",
     ];
 
     for kw in SENSITIVE_KEYWORDS {
         if let Some(pos) = lower.find(kw) {
-            let prefix: String = sanitized[..pos].chars().take(max_len).collect();
-            let kw_clean = kw.trim();
-            if prefix.is_empty() {
-                return format!("[REDACTED:{}]", kw_clean);
-            } else {
-                return format!("{}[REDACTED:{}]", prefix, kw_clean);
+            let mut cut = pos;
+            while cut > 0 && !sanitized.is_char_boundary(cut) {
+                cut -= 1;
             }
+            let prefix: String = sanitized[..cut].chars().take(max_len).collect();
+            let kw_clean = kw.trim();
+            let res = if prefix.is_empty() {
+                format!("[REDACTED:{}]", kw_clean)
+            } else {
+                format!("{}[REDACTED:{}]", prefix, kw_clean)
+            };
+            return if res.chars().count() > max_len {
+                let trunc: String = res.chars().take(max_len).collect();
+                format!("{}...", trunc)
+            } else {
+                res
+            };
         }
     }
 
-    // 3. Check for JWT-like patterns (e.g., "eyJ..." or 3 dot-separated base64 segments)
+    // 3. Check for JWT-like patterns and query strings
     let mut output_parts = Vec::new();
     for word in sanitized.split_whitespace() {
-        let is_jwt_like = (word.starts_with("eyJ") && word.contains('.'))
-            || (word.len() >= 24 && word.matches('.').count() == 2);
+        let is_jwt_like = (word.contains("eyJ") && word.contains('.'))
+            || (word.len() >= 20 && word.matches('.').count() == 2);
         if is_jwt_like {
-            output_parts.push("[REDACTED_JWT]");
+            output_parts.push("[REDACTED_JWT]".to_string());
         } else if let Some(q_idx) = word.find('?') {
             // Strip query string in URL previews to avoid leaking ?token=... or ?api_key=...
             let base = &word[..q_idx];
-            output_parts.push(base);
-            output_parts.push("?[REDACTED_QUERY]");
+            output_parts.push(format!("{}?[REDACTED_QUERY]", base));
         } else {
-            output_parts.push(word);
+            output_parts.push(word.to_string());
         }
     }
 

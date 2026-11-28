@@ -51,7 +51,8 @@ parser/
 │   ├── day12_regression_and_stability_tests.rs # Complete end-to-end pipeline, Day 11 parity & security regressions (Day 12)
 │   ├── public_api_integration_tests.rs   # Downstream public API integration readiness & contract tests (Day 13)
 │   ├── connection_lifecycle_and_reassembly_tests.rs # Connection lifecycle, reassembly reliability & DoS queue bounds (Day 14)
-│   └── error_classification_and_diagnostics_tests.rs # Error classification, redaction & bounded diagnostics (Day 15)
+│   ├── error_classification_and_diagnostics_tests.rs # Error classification, redaction & bounded diagnostics (Day 15)
+│   └── day16_diagnostics_validation_and_recovery_tests.rs # Diagnostics validation, recovery hardening & zero-leak tests (Day 16)
 └── README.md                         # This documentation
 ```
 

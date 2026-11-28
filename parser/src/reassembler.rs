@@ -179,6 +179,15 @@ impl StreamReassembler {
     }
 
     pub fn with_config(timeout_secs: f64, limits: ParserLimits) -> Self {
+        Self::with_diagnostic_capacity(timeout_secs, limits, DEFAULT_MAX_DIAGNOSTICS)
+    }
+
+    /// Create a new StreamReassembler with custom timeout, limits, and diagnostic buffer capacity.
+    pub fn with_diagnostic_capacity(
+        timeout_secs: f64,
+        limits: ParserLimits,
+        max_diagnostics: usize,
+    ) -> Self {
         Self {
             connections: HashMap::new(),
             idle_timeout_secs: timeout_secs,
@@ -186,9 +195,23 @@ impl StreamReassembler {
             unmatched_responses_count: 0,
             swept_connections_count: 0,
             last_sweep_ts: 0.0,
-            diagnostics: VecDeque::with_capacity(DEFAULT_MAX_DIAGNOSTICS),
-            max_diagnostics: DEFAULT_MAX_DIAGNOSTICS,
+            diagnostics: VecDeque::with_capacity(max_diagnostics),
+            max_diagnostics,
             error_counts: HashMap::new(),
+        }
+    }
+
+    /// Builder method to configure maximum retained diagnostic entries.
+    pub fn with_max_diagnostics(mut self, max: usize) -> Self {
+        self.set_max_diagnostics(max);
+        self
+    }
+
+    /// Set maximum retained diagnostic entries, evicting oldest if buffer exceeds new limit.
+    pub fn set_max_diagnostics(&mut self, max: usize) {
+        self.max_diagnostics = max;
+        while self.diagnostics.len() > self.max_diagnostics {
+            self.diagnostics.pop_front();
         }
     }
 
