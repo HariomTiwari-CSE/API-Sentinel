@@ -21,3 +21,23 @@ def generate(seed: int = 7) -> list[dict]:
         for _ in range(3):
             orders[next_id] = user
             next_id += 1
+    
+    for _ in range(2):  # 1025-1026
+        orders[next_id] = "mallory"
+        next_id += 1
+    for _ in range(4):  # 1027-1030 belong to a user who never appears in traffic
+        orders[next_id] = "ghost"
+        next_id += 1
+    created_id = [1041]  # 1031-1040 do not exist
+
+    events: list[dict] = []
+
+    def emit(ts, user, role, method, path, status, resp=None, label="benign", req=None):
+        events.append(
+            {
+                "ts": round(ts, 3), "user": user, "method": method, "path": path,
+                "status": status, "req_body": req, "resp_body": resp,
+                "latency_ms": round(rng.uniform(8, 40), 1),
+                "src_ip": ips[user], "role": role, "label": label,
+            }
+        )
